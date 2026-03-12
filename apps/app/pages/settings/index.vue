@@ -52,20 +52,6 @@ const sessionData = computed(() => {
               Open
             </a>
           </div>
-          <div class="border-t border-gray-800" />
-          <div class="flex items-center justify-between">
-            <div>
-              <p class="text-sm text-gray-100">Legal Subgraph</p>
-              <p class="text-xs text-gray-400">Legal entities & compliance schema</p>
-            </div>
-            <a
-              href="/api/legal/graphiql"
-              target="_blank"
-              class="px-3 py-1 rounded text-sm bg-gray-700 text-gray-300 hover:bg-gray-600 transition-colors"
-            >
-              Open
-            </a>
-          </div>
         </div>
       </section>
 

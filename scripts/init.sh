@@ -57,13 +57,6 @@ $PSQL -d aegir -c "GRANT ALL PRIVILEGES ON DATABASE aegir TO iam_svc;" 2>/dev/nu
 ensure_schema aegir iam iam_svc
 
 # ──────────────────────────────────────────────
-# Legal service (schema in aegir DB)
-# ──────────────────────────────────────────────
-ensure_user legal_svc legal_dev
-$PSQL -d aegir -c "GRANT ALL PRIVILEGES ON DATABASE aegir TO legal_svc;" 2>/dev/null || true
-ensure_schema aegir legal legal_svc
-
-# ──────────────────────────────────────────────
 # Conductor (workflow engine) — needs REPLICATION for CDC
 # ──────────────────────────────────────────────
 ensure_user conductor conductor_dev REPLICATION

@@ -18,28 +18,13 @@ services:
       S3_BUCKET: aegir-docs
       NUXT_APP_BASE_URL: "/app"
       CONDUCTOR_URL: http://conductor:8080/api
-      # Orchestration integrations
-      SMTP_HOST: mailhog
-      SMTP_PORT: "1025"
-      SMTP_SECURE: "false"
-      SMTP_FROM: contracting@healthfirst.local
-      SMTP_FROM_NAME: Health First Contracting
-      AGENT_INTEL_URL: ""
-      AGENT_INTEL_API_KEY: ""
-      DOCUSIGN_BASE_URL: ""
-      DOCUSIGN_ACCOUNT_ID: ""
-      DOCUSIGN_INTEGRATION_KEY: ""
-      DOCUSIGN_SECRET_KEY: ""
-      GOOGLE_DRIVE_CREDENTIALS_PATH: ""
-      GOOGLE_DRIVE_CONTRACTING_FOLDER_ID: ""
-      GOOGLE_DRIVE_TEMPLATE_FOLDER_ID: ""
-      SH_CARRIER_CONTACT_EMAIL: amy.koncar@selecthealth.org
-      SH_TRAINING_CONTACT_EMAIL: andrew.freeze@selecthealth.org
-      SH_WRITING_NUMBER: "16672C01"
+      aegir_DATABASE_URL: postgresql://aegir:aegir_dev@postgres:5432/aegir
       KAFKA_BROKERS: redpanda:29092
       SCHEMA_REGISTRY_URL: http://redpanda:8083
       CDC_DATABASE_URL: postgresql://aegir:aegir_dev@postgres:5432/conductor_cdc
-      aegir_DATABASE_URL: postgresql://aegir:aegir_dev@postgres:5432/aegir
+      SMTP_HOST: mailhog
+      SMTP_PORT: "1025"
+      SMTP_SECURE: "false"
       # OIDC auth (nuxt-oidc-auth) — provider-agnostic naming
       NUXT_OIDC_PROVIDERS_OIDC_CLIENT_ID: aegir-app
       NUXT_OIDC_PROVIDERS_OIDC_CLIENT_SECRET: "aegir-local-dev-oidc-client-secret"
@@ -85,8 +70,7 @@ services:
     container_name: aegir-traefik
     restart: unless-stopped
     ports:
-      - "8080:80"
-      - "8081:8080"
+      - "7356:80"
     volumes:
       - ./traefik/traefik.yml:/etc/traefik/traefik.yml:ro
       - ./traefik/dynamic.yml:/etc/traefik/dynamic.yml:ro

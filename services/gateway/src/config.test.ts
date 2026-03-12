@@ -12,7 +12,6 @@ describe('gateway config', () => {
 
   it('has all service URLs configured', () => {
     expect(config.services.iam).toContain('/graphql')
-    expect(config.services.legal).toContain('/graphql')
     expect(config.services.agents).toContain('/graphql')
   })
 })

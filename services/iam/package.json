@@ -11,11 +11,11 @@
   },
   "dependencies": {
     "@mercuriusjs/federation": "*",
-    "@moribashi/common": "^0.1.0",
-    "@moribashi/core": "^0.1.0",
-    "@moribashi/graphql": "^0.1.2",
-    "@moribashi/pg": "^0.1.2",
-    "@moribashi/web": "^0.1.0",
+    "@moribashi/common": "^0.1.11",
+    "@moribashi/core": "^0.1.11",
+    "@moribashi/graphql": "^0.1.11",
+    "@moribashi/pg": "^0.1.11",
+    "@moribashi/web": "^0.1.11",
     "@aegir/common": "workspace:*",
     "fastify": "^5.0.0",
     "graphql": "^16.0.0"

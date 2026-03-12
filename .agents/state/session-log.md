@@ -1,44 +1,27 @@
 # Session Log
 
-## 2026-02-21 — Project Initialization
+## 2026-03-11 — Fork Cleanup
 
 ### What was done
 
-1. **README.md** created with project context (what aegir is, the product vision, first use case, key concepts)
-2. **pnpm monorepo** initialized with Turborepo orchestration across 6 packages:
-   - `@aegir/common` — shared utilities (env helpers), with tests
-   - `@aegir/domain` — shared domain types (User, Organization)
-   - `@aegir/gateway` — Mercurius federated GraphQL gateway (port 4000)
-   - `@aegir/iam` — Fastify + Mercurius federation subgraph for identity/orgs (port 4001)
-   - `@aegir/legal` — Fastify + Mercurius federation subgraph for contracts (port 4002)
-   - `@aegir/app` — Nuxt 3 + Tailwind CSS SSR frontend (port 3000)
-3. **Traefik reverse proxy** added to devcontainer docker-compose, exposing everything on port 8080:
-   - `/app` → Nuxt frontend
-   - `/api/graphql` → Gateway
-   - `/api/iam/*` → IAM subgraph
-   - `/api/legal/*` → Legal subgraph
-4. **Testing** set up with Vitest, colocated test files (11 tests passing)
-5. **All packages build and test successfully** via `pnpm build` / `pnpm test`
+Forked from a healthcare contracting prototype and stripped domain-specific code:
 
-### Key decisions
+1. **Removed**: `legal` service (contracts, Select Health workflows, workflow notes)
+2. **Removed frontend**: office/contracting pages, `useContracting` composable
+3. **Removed**: prototype-specific env vars (AGENT_INTEL, DOCUSIGN, GOOGLE_DRIVE, SH_* carrier configs)
+4. **Removed**: prototype-specific docs (overview, agent-loop, todo, notes, biz/, dev/notes)
+5. **Cleaned up**: gateway (removed legal subgraph ref), traefik (removed legal route), postgres init (removed legal_svc), dashboard cards genericized
+6. **Kept**: Conductor + orchestration + conductor-cdc + agents (restored after initial removal)
 
-| Decision            | Choice                                   | Rationale                                                                                                                                                                     |
-| ------------------- | ---------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Package scope       | `@aegir/`                                | Matches project name; user mixed `@aegir/` and `@rebuild/` — standardized on the former                                                                                       |
-| Build orchestration | Turborepo                                | Handles dependency-aware parallel builds + caching                                                                                                                            |
-| Package builds      | tsup (esbuild)                           | Fast ESM output with DTS generation                                                                                                                                           |
-| GraphQL federation  | Mercurius (gateway + federation plugins) | Uniform Fastify ecosystem; user requested WunderGraph but Cosmo Router is a Go binary — Mercurius keeps everything Node.js/TypeScript. Can swap to Cosmo for production later |
-| Frontend framework  | Nuxt 3 with `@nuxtjs/tailwindcss`        | User specified Vue 3 + SSR + Tailwind                                                                                                                                         |
-| Testing             | Vitest, colocated `*.test.ts`            | User specified vitest + colocated tests                                                                                                                                       |
-| Module system       | ESM throughout (`"type": "module"`)      | Modern Node.js standard                                                                                                                                                       |
-| Reverse proxy       | Traefik v3.3 via docker-compose          | Single entry point (port 8080) for all services outside devcontainer                                                                                                          |
-| Nuxt base URL       | `NUXT_APP_BASE_URL=/app` env var         | Allows Nuxt to serve under `/app` prefix behind Traefik without path rewriting issues                                                                                         |
+### What remains
 
-### Open items
-
-- No GraphQL client wired up in the Nuxt app yet (just runtime config pointing to `/api/graphql`)
-- Subgraph schemas are stubs — no data sources connected
-- No Postgres integration yet (DB is running in docker-compose but unused)
-- No MinIO/S3 integration yet
-- Gateway tests skipped (requires running subgraphs — integration test concern)
-- Medicare process documentation still incomplete (blocked on client input)
+- `@aegir/common` — shared utilities
+- `@aegir/domain` — Identity, Organization types
+- `@aegir/gateway` — Mercurius federated GraphQL gateway (:4000)
+- `@aegir/iam` — identity & organization subgraph (:4001)
+- `@aegir/agents` — AI conversation subgraph (:4003)
+- `@aegir/orchestration` — Conductor workflow task workers (:4010)
+- `@aegir/conductor-cdc` — change data capture from Conductor
+- `@aegir/app` — Nuxt 3 SSR frontend (:3000)
+- DevContainer stack: Postgres, Keycloak, Conductor, MinIO, Redpanda, Redis, Debezium, Mailhog, Grafana/Tempo/Loki/Promtail, Traefik
+- OpenTofu infra, scripts
