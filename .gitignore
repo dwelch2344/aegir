@@ -1,0 +1,16 @@
+node_modules/
+dist/
+.nuxt/
+.output/
+.turbo/
+*.tsbuildinfo
+.env
+.env.*
+!.env.example
+.devcontainer/data/*
+.pnpm-store
+log.txt
+.terraform
+*.hcl
+*.tfstate
+*.tfstate.*

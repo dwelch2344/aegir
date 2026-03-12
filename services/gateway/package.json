@@ -1,0 +1,25 @@
+{
+  "name": "@aegir/gateway",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "tsup",
+    "dev": "tsx watch src/index.ts",
+    "test": "vitest run",
+    "test:watch": "vitest"
+  },
+  "dependencies": {
+    "@fastify/cors": "^10.0.0",
+    "@mercuriusjs/gateway": "*",
+    "@aegir/common": "workspace:*",
+    "fastify": "^5.0.0",
+    "graphql": "^16.0.0"
+  },
+  "devDependencies": {
+    "tsup": "^8.0.0",
+    "tsx": "^4.0.0",
+    "typescript": "^5.7.0",
+    "vitest": "^3.0.0"
+  }
+}

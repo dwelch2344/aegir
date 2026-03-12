@@ -1,0 +1,228 @@
+{
+  "annotations": {
+    "list": []
+  },
+  "editable": true,
+  "fiscalYearStartMonth": 0,
+  "graphTooltip": 1,
+  "links": [],
+  "panels": [
+    {
+      "title": "JVM Memory Used",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 0 },
+      "datasource": { "type": "prometheus", "uid": "PBFA97CFB590B2093" },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "bytes",
+          "custom": { "fillOpacity": 20 }
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "expr": "jvm_memory_used_bytes{job=\"conductor\"}",
+          "legendFormat": "{{area}} - {{id}}",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "title": "JVM Threads",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 0 },
+      "datasource": { "type": "prometheus", "uid": "PBFA97CFB590B2093" },
+      "fieldConfig": {
+        "defaults": { "custom": { "fillOpacity": 10 } },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "expr": "jvm_threads_live_threads{job=\"conductor\"}",
+          "legendFormat": "Live Threads",
+          "refId": "A"
+        },
+        {
+          "expr": "jvm_threads_daemon_threads{job=\"conductor\"}",
+          "legendFormat": "Daemon Threads",
+          "refId": "B"
+        }
+      ]
+    },
+    {
+      "title": "CPU Usage",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 8 },
+      "datasource": { "type": "prometheus", "uid": "PBFA97CFB590B2093" },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit",
+          "min": 0,
+          "max": 1,
+          "custom": { "fillOpacity": 20 }
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "expr": "system_cpu_usage{job=\"conductor\"}",
+          "legendFormat": "System CPU",
+          "refId": "A"
+        },
+        {
+          "expr": "process_cpu_usage{job=\"conductor\"}",
+          "legendFormat": "Process CPU",
+          "refId": "B"
+        }
+      ]
+    },
+    {
+      "title": "GC Pause Duration",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 8 },
+      "datasource": { "type": "prometheus", "uid": "PBFA97CFB590B2093" },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "custom": { "fillOpacity": 10 }
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "expr": "rate(jvm_gc_pause_seconds_sum{job=\"conductor\"}[1m])",
+          "legendFormat": "{{action}} - {{cause}}",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "title": "HTTP Request Rate",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 16 },
+      "datasource": { "type": "prometheus", "uid": "PBFA97CFB590B2093" },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "reqps",
+          "custom": { "fillOpacity": 10 }
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "expr": "sum(rate(http_server_requests_seconds_count{job=\"conductor\"}[1m])) by (uri, method, status)",
+          "legendFormat": "{{method}} {{uri}} [{{status}}]",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "title": "HTTP Request Latency (p95)",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 16 },
+      "datasource": { "type": "prometheus", "uid": "PBFA97CFB590B2093" },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "custom": { "fillOpacity": 10 }
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.95, sum(rate(http_server_requests_seconds_bucket{job=\"conductor\"}[5m])) by (le, uri))",
+          "legendFormat": "p95 {{uri}}",
+          "refId": "A"
+        },
+        {
+          "expr": "histogram_quantile(0.50, sum(rate(http_server_requests_seconds_bucket{job=\"conductor\"}[5m])) by (le, uri))",
+          "legendFormat": "p50 {{uri}}",
+          "refId": "B"
+        }
+      ]
+    },
+    {
+      "title": "Workflow Metrics",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 24 },
+      "datasource": { "type": "prometheus", "uid": "PBFA97CFB590B2093" },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "custom": { "fillOpacity": 10 }
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "expr": "sum(rate(workflow_start_error_total{job=\"conductor\"}[1m])) or vector(0)",
+          "legendFormat": "Start Errors /min",
+          "refId": "A"
+        },
+        {
+          "expr": "sum(rate(workflow_completed_total{job=\"conductor\"}[1m])) or vector(0)",
+          "legendFormat": "Completed /min",
+          "refId": "B"
+        },
+        {
+          "expr": "sum(rate(workflow_running_total{job=\"conductor\"}[1m])) or vector(0)",
+          "legendFormat": "Running /min",
+          "refId": "C"
+        }
+      ]
+    },
+    {
+      "title": "Task Metrics",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 24 },
+      "datasource": { "type": "prometheus", "uid": "PBFA97CFB590B2093" },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "custom": { "fillOpacity": 10 }
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "expr": "sum(rate(task_poll_count_total{job=\"conductor\"}[1m])) by (taskType) or vector(0)",
+          "legendFormat": "Poll {{taskType}}",
+          "refId": "A"
+        },
+        {
+          "expr": "sum(rate(task_completed_total{job=\"conductor\"}[1m])) by (taskType) or vector(0)",
+          "legendFormat": "Complete {{taskType}}",
+          "refId": "B"
+        }
+      ]
+    },
+    {
+      "title": "Conductor Logs",
+      "type": "logs",
+      "gridPos": { "h": 10, "w": 24, "x": 0, "y": 32 },
+      "datasource": { "type": "loki" },
+      "targets": [
+        {
+          "expr": "{container=~\"aegir-conductor\"}",
+          "refId": "A"
+        }
+      ],
+      "options": {
+        "showTime": true,
+        "showLabels": false,
+        "showCommonLabels": false,
+        "wrapLogMessage": true,
+        "prettifyLogMessage": false,
+        "enableLogDetails": true,
+        "sortOrder": "Descending"
+      }
+    }
+  ],
+  "schemaVersion": 39,
+  "tags": ["conductor", "observability"],
+  "templating": { "list": [] },
+  "time": { "from": "now-1h", "to": "now" },
+  "title": "Conductor",
+  "uid": "conductor-overview",
+  "version": 1
+}

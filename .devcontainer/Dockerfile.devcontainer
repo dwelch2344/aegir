@@ -1,0 +1,22 @@
+FROM mcr.microsoft.com/devcontainers/javascript-node:dev-24
+
+RUN apt-get update \
+  && apt-get install -y \
+  docker.io \
+  postgresql-client \
+  direnv \
+  && rm -rf /var/lib/apt/lists/* \
+  && curl --proto '=https' --tlsv1.2 -fsSL https://get.opentofu.org/install-opentofu.sh | sh -s -- --install-method standalone \
+  && echo 'eval "$(direnv hook bash)"' >> /home/node/.bashrc \
+  && npm install -g @anthropic-ai/claude-code
+
+# Add node user to docker group for host docker socket access
+RUN usermod -aG docker node
+
+RUN mkdir -p /workspace && chown node:node /workspace
+
+USER node
+
+WORKDIR /workspace
+
+CMD [ "node", "src/main.ts" ]

@@ -1,0 +1,125 @@
+http:
+  routers:
+    infra-mailhog:
+      rule: "PathPrefix(`/infra/mailhog`)"
+      entryPoints: [web]
+      service: mailhog
+      middlewares: [strip-infra-mailhog]
+
+    infra-grafana:
+      rule: "PathPrefix(`/infra/grafana`)"
+      entryPoints: [web]
+      service: grafana
+
+    infra-idp:
+      rule: "PathPrefix(`/infra/idp`)"
+      entryPoints: [web]
+      service: keycloak
+
+    infra-conductor:
+      rule: "PathPrefix(`/infra/conductor`)"
+      entryPoints: [web]
+      service: conductor-ui
+
+    infra-redpanda:
+      rule: "PathPrefix(`/infra/redpanda`)"
+      entryPoints: [web]
+      service: redpanda-console
+
+    root-redirect:
+      rule: "Path(`/`)"
+      entryPoints: [web]
+      service: noop@internal
+      middlewares: [redirect-to-app]
+
+    app:
+      rule: "PathPrefix(`/app`)"
+      entryPoints: [web]
+      service: app
+
+    api-iam:
+      rule: "PathPrefix(`/api/iam`)"
+      entryPoints: [web]
+      service: iam
+      middlewares: [strip-api-iam]
+
+    api-legal:
+      rule: "PathPrefix(`/api/legal`)"
+      entryPoints: [web]
+      service: legal
+      middlewares: [strip-api-legal]
+
+    api-gateway:
+      rule: "PathPrefix(`/api/graphql`) || PathPrefix(`/api/graphiql`)"
+      entryPoints: [web]
+      service: gateway
+      middlewares: [strip-api]
+
+  middlewares:
+    strip-infra-mailhog:
+      stripPrefix:
+        prefixes: ["/infra/mailhog"]
+
+    redirect-to-app:
+      redirectRegex:
+        regex: "^(https?://[^/]*)/$"
+        replacement: "${1}/app/"
+        permanent: false
+
+    strip-api:
+      stripPrefix:
+        prefixes: ["/api"]
+
+    strip-api-iam:
+      stripPrefix:
+        prefixes: ["/api/iam"]
+
+    strip-api-legal:
+      stripPrefix:
+        prefixes: ["/api/legal"]
+
+  services:
+    app:
+      loadBalancer:
+        servers:
+          - url: "http://aegir-dev:3000"
+
+    gateway:
+      loadBalancer:
+        servers:
+          - url: "http://aegir-dev:4000"
+
+    iam:
+      loadBalancer:
+        servers:
+          - url: "http://aegir-dev:4001"
+
+    legal:
+      loadBalancer:
+        servers:
+          - url: "http://aegir-dev:4002"
+
+    mailhog:
+      loadBalancer:
+        servers:
+          - url: "http://mailhog:8025"
+
+    grafana:
+      loadBalancer:
+        servers:
+          - url: "http://grafana:3000"
+
+    keycloak:
+      loadBalancer:
+        servers:
+          - url: "http://keycloak:8080"
+
+    conductor-ui:
+      loadBalancer:
+        servers:
+          - url: "http://conductor-ui:5000"
+
+    redpanda-console:
+      loadBalancer:
+        servers:
+          - url: "http://redpanda-console:8080"

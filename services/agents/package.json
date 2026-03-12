@@ -1,0 +1,29 @@
+{
+  "name": "@aegir/agents",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "tsup",
+    "dev": "tsx watch src/index.ts",
+    "test": "vitest run",
+    "test:watch": "vitest"
+  },
+  "dependencies": {
+    "@mercuriusjs/federation": "*",
+    "@moribashi/common": "^0.1.0",
+    "@moribashi/core": "^0.1.0",
+    "@moribashi/graphql": "^0.1.2",
+    "@moribashi/pg": "^0.1.2",
+    "@moribashi/web": "^0.1.0",
+    "@aegir/common": "workspace:*",
+    "fastify": "^5.0.0",
+    "graphql": "^16.0.0"
+  },
+  "devDependencies": {
+    "tsup": "^8.0.0",
+    "tsx": "^4.0.0",
+    "typescript": "^5.7.0",
+    "vitest": "^3.0.0"
+  }
+}

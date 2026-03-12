@@ -1,0 +1,376 @@
+name: aegir
+
+services:
+  aegir-dev:
+    container_name: aegir-dev
+    stdin_open: true
+    tty: true
+    build:
+      context: "../"
+      dockerfile: ".devcontainer/Dockerfile.devcontainer"
+    environment:
+      SHELL: /bin/bash
+      KEEP_ARTIFACTS: "true"
+      WORKDIR: /workspace
+      S3_ENDPOINT: http://minio:9000
+      S3_ACCESS_KEY: minioadmin
+      S3_SECRET_KEY: minioadmin
+      S3_BUCKET: aegir-docs
+      NUXT_APP_BASE_URL: "/app"
+      CONDUCTOR_URL: http://conductor:8080/api
+      # Orchestration integrations
+      SMTP_HOST: mailhog
+      SMTP_PORT: "1025"
+      SMTP_SECURE: "false"
+      SMTP_FROM: contracting@healthfirst.local
+      SMTP_FROM_NAME: Health First Contracting
+      AGENT_INTEL_URL: ""
+      AGENT_INTEL_API_KEY: ""
+      DOCUSIGN_BASE_URL: ""
+      DOCUSIGN_ACCOUNT_ID: ""
+      DOCUSIGN_INTEGRATION_KEY: ""
+      DOCUSIGN_SECRET_KEY: ""
+      GOOGLE_DRIVE_CREDENTIALS_PATH: ""
+      GOOGLE_DRIVE_CONTRACTING_FOLDER_ID: ""
+      GOOGLE_DRIVE_TEMPLATE_FOLDER_ID: ""
+      SH_CARRIER_CONTACT_EMAIL: amy.koncar@selecthealth.org
+      SH_TRAINING_CONTACT_EMAIL: andrew.freeze@selecthealth.org
+      SH_WRITING_NUMBER: "16672C01"
+      KAFKA_BROKERS: redpanda:29092
+      SCHEMA_REGISTRY_URL: http://redpanda:8083
+      CDC_DATABASE_URL: postgresql://aegir:aegir_dev@postgres:5432/conductor_cdc
+      aegir_DATABASE_URL: postgresql://aegir:aegir_dev@postgres:5432/aegir
+      # OIDC auth (nuxt-oidc-auth) — provider-agnostic naming
+      NUXT_OIDC_PROVIDERS_OIDC_CLIENT_ID: aegir-app
+      NUXT_OIDC_PROVIDERS_OIDC_CLIENT_SECRET: "aegir-local-dev-oidc-client-secret"
+      NUXT_OIDC_PROVIDERS_OIDC_AUTHORIZATION_URL: http://localhost:8080/infra/idp/realms/global/protocol/openid-connect/auth
+      NUXT_OIDC_PROVIDERS_OIDC_TOKEN_URL: http://keycloak:8080/infra/idp/realms/global/protocol/openid-connect/token
+      NUXT_OIDC_PROVIDERS_OIDC_USERINFO_URL: http://keycloak:8080/infra/idp/realms/global/protocol/openid-connect/userinfo
+      NUXT_OIDC_PROVIDERS_OIDC_LOGOUT_URL: http://localhost:8080/infra/idp/realms/global/protocol/openid-connect/logout
+      NUXT_OIDC_PROVIDERS_OIDC_REDIRECT_URI: http://localhost:8080/app/auth/oidc/callback
+      NUXT_OIDC_PROVIDERS_OIDC_OPENID_CONFIGURATION: http://keycloak:8080/infra/idp/realms/global/.well-known/openid-configuration
+      # nuxt-oidc-auth session/encryption secrets (local dev only — deterministic for reproducibility)
+      # Generated via:
+      #   NUXT_OIDC_TOKEN_KEY:            SHA-256 of "aegir-local-dev-token-key", base64-encoded (32 bytes for AES-256-GCM)
+      #   NUXT_OIDC_SESSION_SECRET:       SHA-384 of "aegir-local-dev-session-secret", base64url-encoded (48+ chars required)
+      #   NUXT_OIDC_AUTH_SESSION_SECRET:  SHA-384 of "aegir-local-dev-auth-session-secret", base64url-encoded
+      # Reproduce with:
+      #   node -e "const c=require('crypto'); console.log(c.createHash('sha256').update('aegir-local-dev-token-key').digest('base64'))"
+      #   node -e "const c=require('crypto'); console.log(c.createHash('sha384').update('aegir-local-dev-session-secret').digest('base64url'))"
+      #   node -e "const c=require('crypto'); console.log(c.createHash('sha384').update('aegir-local-dev-auth-session-secret').digest('base64url'))"
+      # For production, generate fresh secrets with: node -e "console.log(require('crypto').randomBytes(32).toString('base64'))"
+      NUXT_OIDC_TOKEN_KEY: "32Vug9YFKV1HfN4jSjZkzn7SmMwxcuALrOPj50/dRt4="
+      NUXT_OIDC_SESSION_SECRET: "NYg74uNUTHrDjqCj4FlNjc0Sn3x8AQ6bySZmAWAF_KjGfIuM0jnwSzClboA5cdb8"
+      NUXT_OIDC_AUTH_SESSION_SECRET: "T1CVIjywFoK_M_JvmVYuG27Zau2LjmCdkxqKiPXLD6Ve5BG1eMZMuWRtPrE9Qsrh"
+      # Keycloak Admin API service account (for org management, user provisioning)
+      KEYCLOAK_ADMIN_API_CLIENT_ID: aegir-admin-api
+      KEYCLOAK_ADMIN_API_CLIENT_SECRET: "aegir-local-dev-admin-api-secret"
+      KEYCLOAK_ADMIN_API_URL: http://keycloak:8080/infra/idp
+
+    volumes:
+      # - ~/.ssh:/home/node/.ssh:rw
+      # - ~/.npmrc:/home/node/.npmrc:rw
+      # - ~/.gitconfig:/home/node/.gitconfig:rw
+      # - ~/.aws:/home/node/.aws:rw
+      # - ~/.docker:/home/node/.docker:rw
+      # - ~/.gnupg:/home/node/.gnupg:rw
+      # - ~/.claude:/home/node/.claude:rw
+      - ..:/workspace
+
+      ### Dev container gets access to host docker
+      - /var/run/docker.sock:/var/run/docker.sock
+
+  traefik:
+    image: traefik:v3.3
+    container_name: aegir-traefik
+    restart: unless-stopped
+    ports:
+      - "8080:80"
+      - "8081:8080"
+    volumes:
+      - ./traefik/traefik.yml:/etc/traefik/traefik.yml:ro
+      - ./traefik/dynamic.yml:/etc/traefik/dynamic.yml:ro
+    depends_on:
+      - aegir-dev
+
+  postgres:
+    image: postgres:16-alpine
+    container_name: aegir-postgres
+    restart: unless-stopped
+    command: postgres -c wal_level=logical -c max_replication_slots=4 -c max_wal_senders=4
+    environment:
+      POSTGRES_USER: aegir
+      POSTGRES_PASSWORD: aegir_dev
+      POSTGRES_DB: aegir
+    volumes:
+      - ./data/postgres:/var/lib/postgresql/data
+      - ./postgres/init-databases.sql:/docker-entrypoint-initdb.d/01-init-databases.sql:ro
+      - ./postgres/01-enable-replication.sh:/docker-entrypoint-initdb.d/02-enable-replication.sh:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U aegir"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  minio:
+    image: minio/minio:latest
+    restart: unless-stopped
+    environment:
+      MINIO_ROOT_USER: minioadmin
+      MINIO_ROOT_PASSWORD: minioadmin
+    command: server /data --console-address ":9001"
+    volumes:
+      - ./data/s3:/data
+    healthcheck:
+      test: ["CMD", "mc", "ready", "local"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  mailhog:
+    image: mailhog/mailhog:latest
+    restart: unless-stopped
+  tempo:
+    image: grafana/tempo:2.7.2
+    restart: unless-stopped
+    volumes:
+      - ./tempo/tempo.yml:/etc/tempo/tempo.yml:ro
+      - ./data/tempo:/var/tempo
+    command: ["-config.file=/etc/tempo/tempo.yml"]
+
+  prometheus:
+    image: prom/prometheus:latest
+    restart: unless-stopped
+    entrypoint:
+      - sh
+      - -c
+      - |
+        cat <<'EOF' > /etc/prometheus/prometheus.yml
+        global:
+          scrape_interval: 5s
+        scrape_configs:
+          - job_name: "conductor"
+            metrics_path: "/actuator/prometheus"
+            static_configs:
+              - targets: ["conductor:8080"]
+        EOF
+        exec /bin/prometheus --config.file=/etc/prometheus/prometheus.yml
+
+  keycloak:
+    image: quay.io/keycloak/keycloak:26.5
+    command:
+      - start-dev
+      - --http-relative-path=/infra/idp
+      - --cache=ispn
+      - --features=preview,admin-fine-grained-authz,token-exchange,impersonation
+      - --hostname-strict=false
+      - --spi-theme-cache-themes=false
+      - --spi-theme-cache-templates=false
+      - --spi-theme-static-max-age=-1
+      - --health-enabled=true # Enable the management endpoints
+      - --http-management-health-enabled=false # (local dev only) This puts the management endpoints on the keycloak HTTP port
+    environment:
+      KC_DB: postgres
+      KC_DB_URL: jdbc:postgresql://postgres:5432/keycloak
+      KC_DB_USERNAME: keycloak
+      KC_DB_PASSWORD: keycloak_dev
+      KC_HTTP_ENABLED: "true"
+      KC_HOSTNAME_STRICT: "false"
+
+      KC_BOOTSTRAP_ADMIN_USERNAME: admin
+      KC_BOOTSTRAP_ADMIN_PASSWORD: admin
+
+      KC_PROXY: edge
+
+      # Mail settings (MailHog)
+      KC_MAIL_HOST: mailhog
+      KC_MAIL_PORT: 1025
+      KC_MAIL_FROM: "noreply@example.local"
+      KC_MAIL_FROM_DISPLAY_NAME: "IdP Login"
+      KC_MAIL_REPLY_TO: "noreply@example.local"
+      KC_MAIL_SSL: "false"
+      KC_MAIL_STARTTLS: "false"
+
+      # # External Infinispan (HotRod)
+      # KC_CACHE: ispn
+      # # KC_CACHE_STACK: hotrod
+      # KC_CACHE_REMOTE_HOSTS: infinispan:11222
+      # KC_CACHE_REMOTE_USER: admin
+      # KC_CACHE_REMOTE_PASS: admin
+
+      # Optional tuning
+      JAVA_OPTS_APPEND: "-XX:MaxRAMPercentage=75"
+      KEYCLOAK_LOGLEVEL: DEBUG
+      KC_LOG_LEVEL: INFO,org.keycloak.protocol.oidc:DEBUG
+
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    volumes:
+      # See theme development: https://github.com/keycloak/keycloak/tree/main/themes/src/main/resources/theme/keycloak.v2/login
+      # - ../docker/assets/keycloak/dev-theme:/opt/keycloak/themes/dev-theme
+      - ./data/keycloak:/opt/keycloak/data
+      - ./data/keycloak/logs:/opt/keycloak/log
+    healthcheck:
+      # Keycloak doesn't have HTTP CLI clients. Following recommendations here
+      # https://www.keycloak.org/observability/health#_healthcheck
+      test:
+        [
+          "CMD-SHELL",
+          "{ printf 'HEAD /infra/idp/health/ready HTTP/1.0\\r\\n\\r\\n' >&0; grep 'HTTP/1.0 200'; } 0<>/dev/tcp/localhost/8080",
+        ]
+      interval: 10s
+      timeout: 20s
+      retries: 5
+
+  loki:
+    image: grafana/loki:latest
+    restart: unless-stopped
+    command: -config.file=/etc/loki/local-config.yaml
+
+  promtail:
+    image: grafana/promtail:latest
+    restart: unless-stopped
+    volumes:
+      - ./promtail/config.yml:/etc/promtail/config.yml:ro
+      - /var/lib/docker/containers:/var/lib/docker/containers:ro
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    command: -config.file=/etc/promtail/config.yml
+    depends_on:
+      - loki
+
+  grafana:
+    image: grafana/grafana:latest
+    restart: unless-stopped
+    environment:
+      GF_SERVER_ROOT_URL: http://localhost:8080/infra/grafana
+      GF_SERVER_SERVE_FROM_SUB_PATH: "true"
+      GF_AUTH_ANONYMOUS_ENABLED: "true"
+      GF_AUTH_ANONYMOUS_ORG_ROLE: Admin
+      GF_INSTALL_PLUGINS: grafana-metricsdrilldown-app
+    volumes:
+      - ./grafana/datasources.yml:/etc/grafana/provisioning/datasources/datasources.yml:ro
+      - ./grafana/dashboards.yml:/etc/grafana/provisioning/dashboards/dashboards.yml:ro
+      - ./grafana/dashboards:/var/lib/grafana/dashboards:ro
+      - ./data/grafana:/var/lib/grafana
+    depends_on:
+      - prometheus
+      - loki
+      - tempo
+
+  redpanda:
+    image: docker.redpanda.com/redpandadata/redpanda:latest
+    restart: unless-stopped
+    command:
+      - redpanda start
+      - --overprovisioned
+      - --smp 1
+      - --memory 1G
+      - --reserve-memory 0M
+      - --node-id 0
+      - --check=false
+      - --kafka-addr PLAINTEXT://0.0.0.0:29092,OUTSIDE://0.0.0.0:9092
+      - --advertise-kafka-addr PLAINTEXT://redpanda:29092,OUTSIDE://localhost:9092
+      - --pandaproxy-addr 0.0.0.0:8082
+      - --advertise-pandaproxy-addr redpanda:8082
+      - --schema-registry-addr 0.0.0.0:8083
+      - --mode dev-container
+    volumes:
+      - ./data/redpanda:/var/lib/redpanda/data
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "rpk cluster health --api-urls localhost:9644 | grep -q 'Healthy:.*true'",
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  redpanda-console:
+    image: docker.redpanda.com/redpandadata/console:latest
+    restart: unless-stopped
+    entrypoint: /bin/sh
+    command: -c 'echo "$$CONSOLE_CONFIG_FILE" > /tmp/config.yml && /app/console'
+    environment:
+      CONFIG_FILEPATH: /tmp/config.yml
+      CONSOLE_CONFIG_FILE: |
+        kafka:
+          brokers: ["redpanda:29092"]
+        schemaRegistry:
+          enabled: true
+          urls: ["http://redpanda:8083"]
+        server:
+          basePath: /infra/redpanda
+          setBasePathFromXForwardedPrefix: false
+          stripPrefix: true
+    depends_on:
+      redpanda:
+        condition: service_healthy
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    volumes:
+      - ./data/redis:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  conductor:
+    build:
+      context: ./conductor
+    image: aegir-conductor:local
+    restart: unless-stopped
+    environment:
+      CONFIG_PROP: /app/config/config.properties
+    volumes:
+      - ./conductor/config.properties:/app/config/config.properties:ro
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:8080/health || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 10
+
+  conductor-ui:
+    build:
+      context: ./conductor-ui
+    image: aegir-conductor-ui:local
+    restart: unless-stopped
+    depends_on:
+      - conductor
+
+  debezium-connect:
+    image: debezium/connect:2.5
+    restart: unless-stopped
+    environment:
+      BOOTSTRAP_SERVERS: redpanda:29092
+      GROUP_ID: 1
+      CONFIG_STORAGE_TOPIC: _debezium_connect_configs
+      OFFSET_STORAGE_TOPIC: _debezium_connect_offsets
+      STATUS_STORAGE_TOPIC: _debezium_connect_statuses
+      CONFIG_STORAGE_REPLICATION_FACTOR: 1
+      OFFSET_STORAGE_REPLICATION_FACTOR: 1
+      STATUS_STORAGE_REPLICATION_FACTOR: 1
+      KEY_CONVERTER: org.apache.kafka.connect.json.JsonConverter
+      VALUE_CONVERTER: org.apache.kafka.connect.json.JsonConverter
+      KEY_CONVERTER_SCHEMAS_ENABLE: "false"
+      VALUE_CONVERTER_SCHEMAS_ENABLE: "false"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redpanda:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:8083/ || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 10

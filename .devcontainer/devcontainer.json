@@ -1,0 +1,46 @@
+{
+  "name": "aegir-devcontainer",
+  "dockerComposeFile": "./docker-compose.yml",
+  "service": "aegir-dev",
+  "workspaceFolder": "/workspace",
+  "shutdownAction": "stopCompose",
+  "overrideCommand": true,
+  "remoteUser": "node",
+  "updateRemoteUserUID": true,
+  "mounts": [
+    "source=../,target=//workspace,type=bind",
+    "source=${localEnv:HOME}/.devcontainers/mount/aegir/secrets,target=/home/node/.secrets,type=bind",
+    "source=${localEnv:HOME}/.devcontainers/mount/aegir/claude,target=/home/node/.claude,type=bind",
+    "source=${localEnv:HOME}/.ssh,target=/home/node/.ssh,type=bind",
+    "source=${localEnv:HOME}/.git,target=/home/node/.git,type=bind"
+  ],
+  "containerEnv": {
+    "POD_NAME": "local",
+    "LANE": "local"
+  },
+  "runArgs": [
+    "--cap-add=NET_ADMIN",
+    "--cap-add=NET_RAW"
+  ],
+  "customizations": {
+    "vscode": {
+      "settings": {
+        "terminal.integrated.defaultProfile.linux": "bash",
+        "remote.autoForwardPorts": true,
+        "remote.autoForwardPortsSource": "process"
+      },
+      "extensions": [
+        "biomejs.biome",
+        "anthropic.claude-code",
+        "streetsidesoftware.code-spell-checker",
+        "esbenp.prettier-vscode",
+        "openai.chatgpt",
+        "apollographql.vscode-apollo",
+        "OpenTofu.vscode-opentofu",
+        "Rubymaniac.vscode-direnv",
+        "anthropic.claude-code",
+        "Vue.volar"
+      ]
+    }
+  }
+}

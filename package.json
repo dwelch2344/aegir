@@ -1,0 +1,25 @@
+{
+  "name": "aegir",
+  "private": true,
+  "packageManager": "pnpm@10.16.1",
+  "type": "module",
+  "scripts": {
+    "dev": "turbo dev --ui=stream --log-order=stream",
+    "build": "turbo build",
+    "test": "turbo test",
+    "lint": "turbo lint",
+    "local:init": "bash scripts/init.sh",
+    "local:destroy": "bash scripts/destroy.sh",
+    "local:gh:login": "pnpm login --registry=https://npm.pkg.github.com"
+  },
+  "devDependencies": {
+    "turbo": "^2.0.0",
+    "typescript": "^5.7.0"
+  },
+  "pnpm": {
+    "onlyBuiltDependencies": [
+      "esbuild",
+      "@parcel/watcher"
+    ]
+  }
+}
