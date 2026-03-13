@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 // Must be set before any module imports
 // useOrg.ts uses ref/computed/readonly at module scope
@@ -7,7 +7,11 @@ function makeRef(val: any) {
 }
 
 ;(globalThis as any).ref = makeRef
-;(globalThis as any).computed = (fn: any) => ({ get value() { return fn() } })
+;(globalThis as any).computed = (fn: any) => ({
+  get value() {
+    return fn()
+  },
+})
 ;(globalThis as any).readonly = (r: any) => r
 ;(globalThis as any).$fetch = vi.fn()
 ;(globalThis as any).useCookie = (_name: string, opts?: any) => makeRef(opts?.default?.() ?? null)

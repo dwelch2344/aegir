@@ -27,7 +27,9 @@ export async function handleAgentGatherContext(task: any): Promise<TaskResult> {
       taskId: task.taskId,
       status: 'COMPLETED',
       outputData: { messages },
-      logs: [{ log: `Gathered ${messages.length} messages for conversation ${conversationId}`, createdTime: Date.now() }],
+      logs: [
+        { log: `Gathered ${messages.length} messages for conversation ${conversationId}`, createdTime: Date.now() },
+      ],
     }
   } catch (err: any) {
     return {

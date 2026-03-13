@@ -1,4 +1,3 @@
-
 /** POST /api/orgs — Create a new organization */
 export default defineEventHandler(async (event) => {
   const session = await getUserSession(event)

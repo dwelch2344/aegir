@@ -1,4 +1,4 @@
-import type { WorkflowEvent, TaskEvent } from './schemas.js'
+import type { TaskEvent, WorkflowEvent } from './schemas.js'
 
 type DebeziumOp = 'c' | 'u' | 'd' | 'r' // create, update, delete, read (snapshot)
 

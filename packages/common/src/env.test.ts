@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest'
+import { describe, expect, it } from 'vitest'
 import { getEnv, requireEnv } from './env.js'
 
 describe('getEnv', () => {
@@ -25,8 +25,6 @@ describe('requireEnv', () => {
   })
 
   it('throws when not set', () => {
-    expect(() => requireEnv('NONEXISTENT_VAR')).toThrow(
-      'Missing required environment variable: NONEXISTENT_VAR',
-    )
+    expect(() => requireEnv('NONEXISTENT_VAR')).toThrow('Missing required environment variable: NONEXISTENT_VAR')
   })
 })

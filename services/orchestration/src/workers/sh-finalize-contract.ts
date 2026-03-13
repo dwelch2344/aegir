@@ -1,8 +1,8 @@
 import type { TaskResult } from '../conductor.js'
-import { sendEmail } from '../integrations/email.js'
-import { updateContractStatus } from '../integrations/agent-intel.js'
 import { config } from '../config.js'
-import { randomDelay, log } from '../utils.js'
+import { updateContractStatus } from '../integrations/agent-intel.js'
+import { sendEmail } from '../integrations/email.js'
+import { log, randomDelay } from '../utils.js'
 
 export async function handleShFinalizeContract(task: any): Promise<TaskResult> {
   const { agentEmail, agentFullName, contractId, approvedStates } = task.inputData ?? {}

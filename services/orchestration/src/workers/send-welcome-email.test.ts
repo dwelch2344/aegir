@@ -1,14 +1,16 @@
-import { describe, it, expect } from 'vitest'
-import { handleSendWelcomeEmail } from './send-welcome-email.js'
+import { describe, expect, it } from 'vitest'
 import { createMockTask } from '../test-helpers.js'
+import { handleSendWelcomeEmail } from './send-welcome-email.js'
 
 describe('handleSendWelcomeEmail', () => {
   it('succeeds with email and accountId', () => {
-    const result = handleSendWelcomeEmail(createMockTask({
-      email: 'alice@test.com',
-      name: 'Alice',
-      accountId: 'acct-123',
-    }))
+    const result = handleSendWelcomeEmail(
+      createMockTask({
+        email: 'alice@test.com',
+        name: 'Alice',
+        accountId: 'acct-123',
+      }),
+    )
     expect(result.status).toBe('COMPLETED')
     expect(result.outputData?.sent).toBe(true)
     expect(result.outputData?.to).toBe('alice@test.com')

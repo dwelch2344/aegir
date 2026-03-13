@@ -4,10 +4,8 @@ export function handleValidateIdentity(task: any): TaskResult {
   const { email, name } = task.inputData ?? {}
   const errors: string[] = []
 
-  if (!email || typeof email !== 'string' || !email.includes('@'))
-    errors.push('Invalid or missing email')
-  if (!name || typeof name !== 'string' || name.trim().length < 2)
-    errors.push('Name must be at least 2 characters')
+  if (!email || typeof email !== 'string' || !email.includes('@')) errors.push('Invalid or missing email')
+  if (!name || typeof name !== 'string' || name.trim().length < 2) errors.push('Name must be at least 2 characters')
 
   if (errors.length > 0) {
     return {

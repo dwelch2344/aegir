@@ -1,7 +1,7 @@
 import type { ResolverMap } from '@moribashi/graphql'
-import type TenantsService from './tenants/tenants.svc.js'
 import type IntegrationsService from './integrations/integrations.svc.js'
 import type TenantIntegrationsService from './tenant-integrations/tenant-integrations.svc.js'
+import type TenantsService from './tenants/tenants.svc.js'
 
 export interface RequestCradle {
   tenantsService: TenantsService
@@ -51,7 +51,11 @@ export const resolvers: ResolverMap<RequestCradle> = {
     async updateTenant(this: RequestCradle, _: unknown, args: { key: string; input: { name?: string } }) {
       return this.tenantsService.update(args.key, args.input)
     },
-    async upsertIntegration(this: RequestCradle, _: unknown, args: { input: { key: string; name: string; metadata?: string } }) {
+    async upsertIntegration(
+      this: RequestCradle,
+      _: unknown,
+      args: { input: { key: string; name: string; metadata?: string } },
+    ) {
       return this.integrationsService.upsert(args.input)
     },
   },

@@ -1,7 +1,7 @@
 import type { TaskResult } from '../conductor.js'
-import { updateContractStatus } from '../integrations/agent-intel.js'
 import { config } from '../config.js'
-import { randomDelay, log } from '../utils.js'
+import { updateContractStatus } from '../integrations/agent-intel.js'
+import { log, randomDelay } from '../utils.js'
 
 export async function handleShHfCountersignAndTraining(task: any): Promise<TaskResult> {
   const { agentEmail, agentFullName, contractId } = task.inputData ?? {}

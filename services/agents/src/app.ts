@@ -1,61 +1,61 @@
-import { createApp } from "@moribashi/core";
-import { webPlugin } from "@moribashi/web";
-import { pgPlugin } from "@moribashi/pg";
-import type { ResolverMap } from "@moribashi/graphql";
-import type { FastifyInstance } from "fastify";
-import federation from "@mercuriusjs/federation";
-import { getEnv } from "@aegir/common";
-import { typeDefs } from "./schema.js";
-import { resolvers } from "./resolvers.js";
-import { dirname, join } from "node:path";
-import { fileURLToPath } from "node:url";
+import { dirname, join } from 'node:path'
+import { fileURLToPath } from 'node:url'
+import { getEnv } from '@aegir/common'
+import federation from '@mercuriusjs/federation'
+import { createApp } from '@moribashi/core'
+import type { ResolverMap } from '@moribashi/graphql'
+import { pgPlugin } from '@moribashi/pg'
+import { webPlugin } from '@moribashi/web'
+import type { FastifyInstance } from 'fastify'
+import { resolvers } from './resolvers.js'
+import { typeDefs } from './schema.js'
 
-const __dirname = dirname(fileURLToPath(import.meta.url));
+const __dirname = dirname(fileURLToPath(import.meta.url))
 
 function bindResolversToScope(map: ResolverMap<any>) {
-  const bound: Record<string, Record<string, Function>> = {};
+  const bound: Record<string, Record<string, Function>> = {}
   for (const [type, fields] of Object.entries(map)) {
-    bound[type] = {};
+    bound[type] = {}
     for (const [field, fn] of Object.entries(fields)) {
-      if (typeof fn === "function") {
+      if (typeof fn === 'function') {
         bound[type][field] = (parent: any, args: any, ctx: any, info: any) => {
-          const scope = ctx.scope;
-          const target = scope?.cradle ?? scope?.container?.cradle ?? {};
-          return (fn as Function).call(target, parent, args, ctx, info);
-        };
+          const scope = ctx.scope
+          const target = scope?.cradle ?? scope?.container?.cradle ?? {}
+          return (fn as Function).call(target, parent, args, ctx, info)
+        }
       } else {
-        bound[type][field] = fn;
+        bound[type][field] = fn
       }
     }
   }
-  return bound;
+  return bound
 }
 
 export async function buildApp() {
-  const app = createApp();
+  const app = createApp()
 
   app.use(
     webPlugin({
-      port: Number(getEnv("AGENTS_PORT", "4003")),
-      host: getEnv("AGENTS_HOST", "0.0.0.0"),
+      port: Number(getEnv('AGENTS_PORT', '4003')),
+      host: getEnv('AGENTS_HOST', '0.0.0.0'),
     }),
-  );
+  )
 
   app.use(
     pgPlugin({
-      host: getEnv("PG_HOST", "postgres"),
-      port: Number(getEnv("PG_PORT", "5432")),
-      user: getEnv("PG_USER", "aegir"),
-      password: getEnv("PG_PASSWORD", "aegir_dev"),
-      database: getEnv("PG_DATABASE", "aegir"),
-      searchPath: [getEnv("PG_SCHEMA", "agents")],
-      migrationsDir: join(__dirname, "..", "data", "migrations"),
+      host: getEnv('PG_HOST', 'postgres'),
+      port: Number(getEnv('PG_PORT', '5432')),
+      user: getEnv('PG_USER', 'aegir'),
+      password: getEnv('PG_PASSWORD', 'aegir_dev'),
+      database: getEnv('PG_DATABASE', 'aegir'),
+      searchPath: [getEnv('PG_SCHEMA', 'agents')],
+      migrationsDir: join(__dirname, '..', 'data', 'migrations'),
     }),
-  );
+  )
 
-  await app.scan(["**/*.svc.ts"], { cwd: __dirname });
+  await app.scan(['**/*.svc.ts'], { cwd: __dirname })
 
-  const fastify = app.resolve<FastifyInstance>("fastify");
+  const fastify = app.resolve<FastifyInstance>('fastify')
 
   fastify.register(federation as any, {
     schema: typeDefs,
@@ -63,9 +63,9 @@ export async function buildApp() {
     graphiql: true,
     subscription: true,
     context: async (request: any) => ({ scope: request.scope }),
-  });
+  })
 
-  fastify.get("/health", async () => ({ status: "ok", service: "agents" }));
+  fastify.get('/health', async () => ({ status: 'ok', service: 'agents' }))
 
-  return { app, fastify };
+  return { app, fastify }
 }

@@ -1,18 +1,15 @@
-import pg from "pg";
-import { getEnv } from "@aegir/common";
-import { kafka, TOPICS } from "./kafka.js";
-import { WorkflowEventSchema, TaskEventSchema } from "./schemas.js";
-import { decodeStripHeader } from "./schema-registry.js";
+import { getEnv } from '@aegir/common'
+import pg from 'pg'
+import { kafka, TOPICS } from './kafka.js'
+import { decodeStripHeader } from './schema-registry.js'
+import { TaskEventSchema, WorkflowEventSchema } from './schemas.js'
 
-const aegir_DATABASE_URL = getEnv(
-  "aegir_DATABASE_URL",
-  "postgresql://aegir:aegir_dev@postgres:5432/aegir",
-);
+const aegir_DATABASE_URL = getEnv('aegir_DATABASE_URL', 'postgresql://aegir:aegir_dev@postgres:5432/aegir')
 
 export async function initaegirSinkDb(): Promise<pg.Pool> {
-  const pool = new pg.Pool({ connectionString: aegir_DATABASE_URL });
+  const pool = new pg.Pool({ connectionString: aegir_DATABASE_URL })
 
-  await pool.query(`CREATE SCHEMA IF NOT EXISTS conductor`);
+  await pool.query(`CREATE SCHEMA IF NOT EXISTS conductor`)
 
   await pool.query(`
     CREATE TABLE IF NOT EXISTS conductor.workflow_events (
@@ -60,17 +57,17 @@ export async function initaegirSinkDb(): Promise<pg.Pool> {
     CREATE INDEX IF NOT EXISTS idx_conductor_task_events_workflow_id ON conductor.task_events(workflow_id);
     CREATE INDEX IF NOT EXISTS idx_conductor_task_events_status ON conductor.task_events(status);
     CREATE INDEX IF NOT EXISTS idx_conductor_task_events_type ON conductor.task_events(task_type);
-  `);
-  console.log("[cdc] aegir sink tables initialized (conductor schema)");
-  return pool;
+  `)
+  console.log('[cdc] aegir sink tables initialized (conductor schema)')
+  return pool
 }
 
 function parseJsonSafe(val: string | null): object | null {
-  if (!val) return null;
+  if (!val) return null
   try {
-    return JSON.parse(val);
+    return JSON.parse(val)
   } catch {
-    return null;
+    return null
   }
 }
 
@@ -78,31 +75,28 @@ function parseJsonSafe(val: string | null): object | null {
  * Starts the aegir sink consumer: reads Avro-encoded events from the normalized
  * topics and inserts them into the aegir database under the conductor schema.
  */
-export async function startaegirSinkConsumer(
-  pool: pg.Pool,
-  signal: AbortSignal,
-): Promise<void> {
-  const consumer = kafka.consumer({ groupId: "conductor-cdc-aegir-sink" });
-  await consumer.connect();
+export async function startaegirSinkConsumer(pool: pg.Pool, signal: AbortSignal): Promise<void> {
+  const consumer = kafka.consumer({ groupId: 'conductor-cdc-aegir-sink' })
+  await consumer.connect()
   await consumer.subscribe({
     topics: [TOPICS.WORKFLOW_EVENTS, TOPICS.TASK_EVENTS],
     fromBeginning: true,
-  });
+  })
 
-  signal.addEventListener("abort", async () => {
-    console.log("[cdc] shutting down aegir sink consumer...");
-    await consumer.disconnect();
-    await pool.end();
-  });
+  signal.addEventListener('abort', async () => {
+    console.log('[cdc] shutting down aegir sink consumer...')
+    await consumer.disconnect()
+    await pool.end()
+  })
 
   await consumer.run({
     eachMessage: async ({ topic, message }) => {
-      if (!message.value) return;
+      if (!message.value) return
 
-      const { payload } = decodeStripHeader(message.value as Buffer);
+      const { payload } = decodeStripHeader(message.value as Buffer)
 
       if (topic === TOPICS.WORKFLOW_EVENTS) {
-        const event = WorkflowEventSchema.fromBuffer(payload);
+        const event = WorkflowEventSchema.fromBuffer(payload)
         await pool.query(
           `INSERT INTO conductor.workflow_events
             (event_type, workflow_id, workflow_type, version, status,
@@ -124,14 +118,12 @@ export async function startaegirSinkConsumer(
             event.update_time,
             event.captured_at,
           ],
-        );
-        console.log(
-          `[aegir-sink] persisted workflow event: ${event.workflow_id} (${event.status})`,
-        );
+        )
+        console.log(`[aegir-sink] persisted workflow event: ${event.workflow_id} (${event.status})`)
       }
 
       if (topic === TOPICS.TASK_EVENTS) {
-        const event = TaskEventSchema.fromBuffer(payload);
+        const event = TaskEventSchema.fromBuffer(payload)
         await pool.query(
           `INSERT INTO conductor.task_events
             (event_type, task_id, workflow_id, task_type, reference_task_name,
@@ -154,11 +146,9 @@ export async function startaegirSinkConsumer(
             event.retry_count,
             event.captured_at,
           ],
-        );
-        console.log(
-          `[aegir-sink] persisted task event: ${event.task_id} (${event.task_type} → ${event.status})`,
-        );
+        )
+        console.log(`[aegir-sink] persisted task event: ${event.task_id} (${event.task_type} → ${event.status})`)
       }
     },
-  });
+  })
 }

@@ -1,4 +1,4 @@
-import { describe, it, expect, vi } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import { createMockTask } from '../test-helpers.js'
 
 // Mock external dependencies before importing the workers
@@ -10,25 +10,27 @@ vi.mock('../integrations/agent-intel.js', () => ({
   updateContractStatus: vi.fn().mockResolvedValue({ updated: true }),
 }))
 
-import { handleShRequestContract } from './sh-request-contract.js'
-import { handleShAgentSignsDocusign } from './sh-agent-signs-docusign.js'
-import { handleShHfCountersignAndTraining } from './sh-hf-countersign-and-training.js'
-import { handleShFinalizeContract } from './sh-finalize-contract.js'
-import { sendEmail } from '../integrations/email.js'
 import { updateContractStatus } from '../integrations/agent-intel.js'
+import { sendEmail } from '../integrations/email.js'
+import { handleShAgentSignsDocusign } from './sh-agent-signs-docusign.js'
+import { handleShFinalizeContract } from './sh-finalize-contract.js'
+import { handleShHfCountersignAndTraining } from './sh-hf-countersign-and-training.js'
+import { handleShRequestContract } from './sh-request-contract.js'
 
 describe('handleShRequestContract', () => {
   it('sends email and updates status', async () => {
     vi.spyOn(console, 'log').mockImplementation(() => {})
-    const result = await handleShRequestContract(createMockTask({
-      agentFirstName: 'Jane',
-      agentLastName: 'Smith',
-      agentEmail: 'jane@test.com',
-      agentPhone: '555-1234',
-      agentNpn: 'NPN123',
-      approvedStates: ['UT'],
-      contractId: 'sh-aca-1',
-    }))
+    const result = await handleShRequestContract(
+      createMockTask({
+        agentFirstName: 'Jane',
+        agentLastName: 'Smith',
+        agentEmail: 'jane@test.com',
+        agentPhone: '555-1234',
+        agentNpn: 'NPN123',
+        approvedStates: ['UT'],
+        contractId: 'sh-aca-1',
+      }),
+    )
     expect(result.status).toBe('COMPLETED')
     expect(result.outputData?.emailSent).toBe(true)
     expect(result.outputData?.agentIntelStatus).toBe('contract_requested')
@@ -41,14 +43,16 @@ describe('handleShRequestContract', () => {
 
   it('returns FAILED when email throws', async () => {
     vi.mocked(sendEmail).mockRejectedValueOnce(new Error('SMTP down'))
-    const result = await handleShRequestContract(createMockTask({
-      agentFirstName: 'Jane',
-      agentLastName: 'Smith',
-      agentEmail: 'jane@test.com',
-      agentPhone: '555-1234',
-      approvedStates: ['UT'],
-      contractId: 'sh-aca-1',
-    }))
+    const result = await handleShRequestContract(
+      createMockTask({
+        agentFirstName: 'Jane',
+        agentLastName: 'Smith',
+        agentEmail: 'jane@test.com',
+        agentPhone: '555-1234',
+        approvedStates: ['UT'],
+        contractId: 'sh-aca-1',
+      }),
+    )
     expect(result.status).toBe('FAILED')
     expect(result.outputData?.error).toBe('SMTP down')
   })
@@ -57,17 +61,17 @@ describe('handleShRequestContract', () => {
 describe('handleShAgentSignsDocusign', () => {
   it('updates status to agent_signed', async () => {
     vi.spyOn(console, 'log').mockImplementation(() => {})
-    const result = await handleShAgentSignsDocusign(createMockTask({
-      agentEmail: 'jane@test.com',
-      agentFullName: 'Jane Smith',
-      agentNpn: 'NPN123',
-      contractId: 'sh-aca-1',
-    }))
+    const result = await handleShAgentSignsDocusign(
+      createMockTask({
+        agentEmail: 'jane@test.com',
+        agentFullName: 'Jane Smith',
+        agentNpn: 'NPN123',
+        contractId: 'sh-aca-1',
+      }),
+    )
     expect(result.status).toBe('COMPLETED')
     expect(result.outputData?.docusignStatus).toBe('agent_signed')
-    expect(updateContractStatus).toHaveBeenCalledWith(
-      expect.objectContaining({ status: 'agent_signed' }),
-    )
+    expect(updateContractStatus).toHaveBeenCalledWith(expect.objectContaining({ status: 'agent_signed' }))
     vi.restoreAllMocks()
   })
 })
@@ -75,12 +79,14 @@ describe('handleShAgentSignsDocusign', () => {
 describe('handleShHfCountersignAndTraining', () => {
   it('updates status through hf_signed to fully_signed', async () => {
     vi.spyOn(console, 'log').mockImplementation(() => {})
-    const result = await handleShHfCountersignAndTraining(createMockTask({
-      agentEmail: 'jane@test.com',
-      agentFullName: 'Jane Smith',
-      agentNpn: 'NPN123',
-      contractId: 'sh-aca-1',
-    }))
+    const result = await handleShHfCountersignAndTraining(
+      createMockTask({
+        agentEmail: 'jane@test.com',
+        agentFullName: 'Jane Smith',
+        agentNpn: 'NPN123',
+        contractId: 'sh-aca-1',
+      }),
+    )
     expect(result.status).toBe('COMPLETED')
     expect(result.outputData?.docusignStatus).toBe('fully_signed')
     expect(result.outputData?.trainingComplete).toBe(true)
@@ -97,19 +103,19 @@ describe('handleShFinalizeContract', () => {
   it('finalizes contract and sends RTS email', async () => {
     vi.spyOn(console, 'log').mockImplementation(() => {})
     vi.mocked(sendEmail).mockResolvedValue({ sent: true, messageId: '<rts@local>' })
-    const result = await handleShFinalizeContract(createMockTask({
-      agentEmail: 'jane@test.com',
-      agentFullName: 'Jane Smith',
-      agentNpn: 'NPN123',
-      contractId: 'sh-aca-1',
-      approvedStates: ['UT', 'ID'],
-    }))
+    const result = await handleShFinalizeContract(
+      createMockTask({
+        agentEmail: 'jane@test.com',
+        agentFullName: 'Jane Smith',
+        agentNpn: 'NPN123',
+        contractId: 'sh-aca-1',
+        approvedStates: ['UT', 'ID'],
+      }),
+    )
     expect(result.status).toBe('COMPLETED')
     expect(result.outputData?.status).toBe('ready_to_sell')
     expect(result.outputData?.writingNumber).toBeDefined()
-    expect(updateContractStatus).toHaveBeenCalledWith(
-      expect.objectContaining({ status: 'ready_to_sell' }),
-    )
+    expect(updateContractStatus).toHaveBeenCalledWith(expect.objectContaining({ status: 'ready_to_sell' }))
     expect(sendEmail).toHaveBeenCalled()
     vi.restoreAllMocks()
   })

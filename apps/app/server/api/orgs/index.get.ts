@@ -14,7 +14,7 @@ export default defineEventHandler(async (event) => {
   try {
     const orgs = await kcAdmin<any[]>(`/organizations`, { query: { memberUserId: userId } })
     return orgs
-  }catch(err){
+  } catch (err) {
     logger.warn('Failed to fetch orgs from kcAdmin', err)
     throw err
   }

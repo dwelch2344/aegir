@@ -33,10 +33,10 @@ export default class TenantsService {
       id: number
       key: string
       name: string
-    }>(
-      `INSERT INTO tenant (key, name) VALUES (:key, :name) RETURNING id, key, name`,
-      { key: input.key, name: input.name },
-    )
+    }>(`INSERT INTO tenant (key, name) VALUES (:key, :name) RETURNING id, key, name`, {
+      key: input.key,
+      name: input.name,
+    })
     return rows[0]!
   }
 
@@ -56,10 +56,7 @@ export default class TenantsService {
       id: number
       key: string
       name: string
-    }>(
-      `UPDATE tenant SET ${sets.join(', ')} WHERE key = :key RETURNING id, key, name`,
-      params,
-    )
+    }>(`UPDATE tenant SET ${sets.join(', ')} WHERE key = :key RETURNING id, key, name`, params)
 
     if (!rows[0]) throw new Error(`Tenant not found: ${key}`)
     return rows[0]

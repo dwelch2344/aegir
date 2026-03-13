@@ -1,4 +1,4 @@
-import { ref, readonly } from 'vue'
+import { readonly, ref } from 'vue'
 
 export interface ChatMessage {
   id: string
@@ -90,7 +90,9 @@ export function useAgent() {
     activeId.value = id
 
     try {
-      const data = await gql<{ agents: { conversations: { search: { results: Array<Conversation & { messages: ChatMessage[] }> } } } }>(
+      const data = await gql<{
+        agents: { conversations: { search: { results: Array<Conversation & { messages: ChatMessage[] }> } } }
+      }>(
         `query($input: AgentsConversationSearchInput!) {
           agents { conversations { search(input: $input) {
             results { id organizationId title workflowId createdAt updatedAt messages { id conversationId role text createdAt } }
@@ -112,12 +114,11 @@ export function useAgent() {
 
   async function deleteConversation(id: string) {
     try {
-      await gql(
-        `mutation($id: ID!) { agents { conversations { delete(id: $id) } } }`,
-        { id },
-      )
-    } catch { /* best effort */ }
-    conversations.value = conversations.value.filter(c => c.id !== id)
+      await gql(`mutation($id: ID!) { agents { conversations { delete(id: $id) } } }`, { id })
+    } catch {
+      /* best effort */
+    }
+    conversations.value = conversations.value.filter((c) => c.id !== id)
     if (activeId.value === id) {
       activeId.value = null
       messages.value = []
@@ -139,7 +140,7 @@ export function useAgent() {
 
     // Auto-title from first user message
     if (role === 'user') {
-      const convo = conversations.value.find(c => c.id === activeId.value)
+      const convo = conversations.value.find((c) => c.id === activeId.value)
       if (convo && convo.title === 'New conversation') {
         const title = text.length > 40 ? text.slice(0, 40) + '...' : text
         convo.title = title
@@ -152,23 +153,20 @@ export function useAgent() {
   }
 
   /** graphql-ws protocol init + subscribe */
-  function wsSubscribe(
-    ws: WebSocket,
-    id: string,
-    query: string,
-    variables?: Record<string, unknown>,
-  ) {
+  function wsSubscribe(ws: WebSocket, id: string, query: string, variables?: Record<string, unknown>) {
     ws.addEventListener('open', () => {
       ws.send(JSON.stringify({ type: 'connection_init' }))
     })
     ws.addEventListener('message', (ev) => {
       const msg = JSON.parse(ev.data)
       if (msg.type === 'connection_ack') {
-        ws.send(JSON.stringify({
-          id,
-          type: 'subscribe',
-          payload: { query, variables },
-        }))
+        ws.send(
+          JSON.stringify({
+            id,
+            type: 'subscribe',
+            payload: { query, variables },
+          }),
+        )
       }
     })
   }
@@ -194,25 +192,27 @@ export function useAgent() {
       ws.addEventListener('message', (ev) => {
         const msg = JSON.parse(ev.data)
         if (msg.type === 'connection_ack') {
-          ws.send(JSON.stringify({
-            id: 'agent-msg',
-            type: 'subscribe',
-            payload: { query, variables: { conversationId } },
-          }))
+          ws.send(
+            JSON.stringify({
+              id: 'agent-msg',
+              type: 'subscribe',
+              payload: { query, variables: { conversationId } },
+            }),
+          )
           // Subscription is now active
           resolve()
         }
         if (msg.type === 'next' && msg.id === 'agent-msg') {
           const incoming = msg.payload.data.agentsMessageAdded as ChatMessage
           // Remove thinking placeholder if present
-          const thinkingIdx = messages.value.findIndex(m => m.id.startsWith('thinking-'))
+          const thinkingIdx = messages.value.findIndex((m) => m.id.startsWith('thinking-'))
           if (thinkingIdx !== -1) {
             const updated = [...messages.value]
             updated.splice(thinkingIdx, 1, incoming)
             messages.value = updated
           } else {
             // Avoid duplicates
-            if (!messages.value.some(m => m.id === incoming.id)) {
+            if (!messages.value.some((m) => m.id === incoming.id)) {
               messages.value = [...messages.value, incoming]
             }
           }
@@ -243,32 +243,40 @@ export function useAgent() {
 
     // Optimistic user message
     const tempUserId = `temp-user-${Date.now()}`
-    messages.value = [...messages.value, {
-      id: tempUserId,
-      conversationId,
-      role: 'user',
-      text: message,
-      createdAt: new Date().toISOString(),
-    }]
+    messages.value = [
+      ...messages.value,
+      {
+        id: tempUserId,
+        conversationId,
+        role: 'user',
+        text: message,
+        createdAt: new Date().toISOString(),
+      },
+    ]
 
     // Auto-title from first user message
-    const convo = conversations.value.find(c => c.id === conversationId)
+    const convo = conversations.value.find((c) => c.id === conversationId)
     if (convo && convo.title === 'New conversation') {
       convo.title = message.length > 40 ? message.slice(0, 40) + '...' : message
     }
 
     // Thinking placeholder
-    messages.value = [...messages.value, {
-      id: `thinking-${Date.now()}`,
-      conversationId,
-      role: 'assistant',
-      text: '...',
-      createdAt: new Date().toISOString(),
-    }]
+    messages.value = [
+      ...messages.value,
+      {
+        id: `thinking-${Date.now()}`,
+        conversationId,
+        role: 'assistant',
+        text: '...',
+        createdAt: new Date().toISOString(),
+      },
+    ]
 
     try {
       // Send via GraphQL mutation — saves user msg, triggers Conductor workflow
-      const data = await gql<{ agents: { conversations: { sendMessage: { userMessage: ChatMessage; workflowId: string } } } }>(
+      const data = await gql<{
+        agents: { conversations: { sendMessage: { userMessage: ChatMessage; workflowId: string } } }
+      }>(
         `mutation($input: AgentsSendMessageInput!) {
           agents { conversations { sendMessage(input: $input) {
             userMessage { id conversationId role text createdAt }
@@ -280,7 +288,7 @@ export function useAgent() {
 
       // Replace temp user message with the real persisted one
       const { userMessage } = data.agents.conversations.sendMessage
-      const idx = messages.value.findIndex(m => m.id === tempUserId)
+      const idx = messages.value.findIndex((m) => m.id === tempUserId)
       if (idx !== -1) {
         const updated = [...messages.value]
         updated[idx] = userMessage
@@ -290,14 +298,17 @@ export function useAgent() {
       // Assistant response will arrive via the subscription — no polling needed
     } catch (err: any) {
       // Remove optimistic messages and show error
-      messages.value = messages.value.filter(m => !m.id.startsWith('temp-') && !m.id.startsWith('thinking-'))
-      messages.value = [...messages.value, {
-        id: `err-${Date.now()}`,
-        conversationId,
-        role: 'system',
-        text: `Error: ${err?.message || 'Failed to send message'}`,
-        createdAt: new Date().toISOString(),
-      }]
+      messages.value = messages.value.filter((m) => !m.id.startsWith('temp-') && !m.id.startsWith('thinking-'))
+      messages.value = [
+        ...messages.value,
+        {
+          id: `err-${Date.now()}`,
+          conversationId,
+          role: 'system',
+          text: `Error: ${err?.message || 'Failed to send message'}`,
+          createdAt: new Date().toISOString(),
+        },
+      ]
     }
   }
 

@@ -47,18 +47,27 @@ export default class OrganizationsService {
     for (const input of inputs) {
       // Claim existing row by key (e.g. seeded before keycloak_id was set) — skip protected orgs
       const claimed = await this.db.query<{
-        id: number; key: string; name: string; keycloakId: string | null
+        id: number
+        key: string
+        name: string
+        keycloakId: string | null
       }>(
         `UPDATE organization SET keycloak_id = :keycloakId, name = :name, updated_at = now()
          WHERE key = :key AND protected = false AND (keycloak_id IS NULL OR keycloak_id LIKE 'kc-placeholder-%' OR keycloak_id = :keycloakId)
          RETURNING id, key, name, keycloak_id`,
         { keycloakId: input.keycloakId, key: input.key, name: input.name },
       )
-      if (claimed[0]) { results.push(claimed[0]); continue }
+      if (claimed[0]) {
+        results.push(claimed[0])
+        continue
+      }
 
       // Otherwise upsert by keycloak_id
       const rows = await this.db.query<{
-        id: number; key: string; name: string; keycloakId: string | null
+        id: number
+        key: string
+        name: string
+        keycloakId: string | null
       }>(
         `INSERT INTO organization (keycloak_id, key, name)
          VALUES (:keycloakId, :key, :name)

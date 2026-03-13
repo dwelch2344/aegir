@@ -1,6 +1,6 @@
-import { describe, it, expect } from 'vitest'
-import { WorkflowEventSchema, TaskEventSchema } from './schemas.js'
-import type { WorkflowEvent, TaskEvent } from './schemas.js'
+import { describe, expect, it } from 'vitest'
+import type { TaskEvent, WorkflowEvent } from './schemas.js'
+import { TaskEventSchema, WorkflowEventSchema } from './schemas.js'
 
 describe('WorkflowEventSchema', () => {
   const validEvent: WorkflowEvent = {
@@ -42,7 +42,14 @@ describe('WorkflowEventSchema', () => {
   })
 
   it('handles nullable fields correctly', () => {
-    const withNulls = { ...validEvent, correlation_id: null, input: null, output: null, start_time: null, end_time: null }
+    const withNulls = {
+      ...validEvent,
+      correlation_id: null,
+      input: null,
+      output: null,
+      start_time: null,
+      end_time: null,
+    }
     const buf = WorkflowEventSchema.toBuffer(withNulls)
     const decoded = WorkflowEventSchema.fromBuffer(buf)
     expect(decoded.correlation_id).toBeNull()

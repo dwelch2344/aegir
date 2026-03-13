@@ -75,8 +75,7 @@ export const resolvers: ResolverMap<RequestCradle> = {
     },
     iamNotifications: {
       subscribe: withFilter(
-        (_root: unknown, _args: unknown, { pubsub }: any) =>
-          pubsub.subscribe('IAM_NOTIFICATIONS'),
+        (_root: unknown, _args: unknown, { pubsub }: any) => pubsub.subscribe('IAM_NOTIFICATIONS'),
         (payload: any, args: { topic?: string }) => {
           if (!args.topic) return true
           return payload.iamNotifications.topic === args.topic

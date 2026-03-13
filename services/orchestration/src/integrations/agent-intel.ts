@@ -1,11 +1,6 @@
 import { config } from '../config.js'
 
-export type ContractStatus =
-  | 'contract_requested'
-  | 'agent_signed'
-  | 'hf_signed'
-  | 'fully_signed'
-  | 'ready_to_sell'
+export type ContractStatus = 'contract_requested' | 'agent_signed' | 'hf_signed' | 'fully_signed' | 'ready_to_sell'
 
 interface UpdateContractStatusInput {
   contractId: string
@@ -28,7 +23,9 @@ export async function updateContractStatus(input: UpdateContractStatusInput): Pr
   const { baseUrl, apiKey } = config.agentIntel
 
   if (!baseUrl || baseUrl === 'http://localhost:9090') {
-    console.log(`[agent-intel] (not configured) Would update contract ${input.contractId} to "${input.status}" for NPN ${input.agentNpn}`)
+    console.log(
+      `[agent-intel] (not configured) Would update contract ${input.contractId} to "${input.status}" for NPN ${input.agentNpn}`,
+    )
     return { updated: true }
   }
 
@@ -36,7 +33,7 @@ export async function updateContractStatus(input: UpdateContractStatusInput): Pr
     method: 'PUT',
     headers: {
       'Content-Type': 'application/json',
-      ...(apiKey ? { 'Authorization': `Bearer ${apiKey}` } : {}),
+      ...(apiKey ? { Authorization: `Bearer ${apiKey}` } : {}),
     },
     body: JSON.stringify({
       status: input.status,

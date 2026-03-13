@@ -18,7 +18,11 @@ async function request(path: string, options?: RequestInit) {
   }
   const text = await res.text()
   if (!text) return undefined
-  try { return JSON.parse(text) } catch { return text }
+  try {
+    return JSON.parse(text)
+  } catch {
+    return text
+  }
 }
 
 export interface TaskDef {
@@ -93,8 +97,8 @@ export async function getWorkflow(workflowId: string) {
 export async function signalWaitTask(workflowId: string, taskRefName: string, output: Record<string, any>) {
   const wf = await getWorkflow(workflowId)
   if (!wf) throw new Error(`Workflow ${workflowId} not found`)
-  const waitTask = (wf.tasks ?? []).find((t: any) =>
-    t.referenceTaskName?.startsWith(taskRefName) && t.status === 'IN_PROGRESS'
+  const waitTask = (wf.tasks ?? []).find(
+    (t: any) => t.referenceTaskName?.startsWith(taskRefName) && t.status === 'IN_PROGRESS',
   )
   if (!waitTask) throw new Error(`No pending WAIT task "${taskRefName}" in workflow ${workflowId}`)
   return updateTask({

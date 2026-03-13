@@ -1,6 +1,6 @@
-import { describe, it, expect } from 'vitest'
-import { handleValidateIdentity } from './validate-identity.js'
+import { describe, expect, it } from 'vitest'
 import { createMockTask } from '../test-helpers.js'
+import { handleValidateIdentity } from './validate-identity.js'
 
 describe('handleValidateIdentity', () => {
   it('succeeds with valid email and name', () => {

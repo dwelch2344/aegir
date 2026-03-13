@@ -1,6 +1,6 @@
-import { describe, it, expect } from 'vitest'
-import { handleShValidateAgentInfo } from './sh-validate-agent-info.js'
+import { describe, expect, it } from 'vitest'
 import { createMockTask } from '../test-helpers.js'
+import { handleShValidateAgentInfo } from './sh-validate-agent-info.js'
 
 function validAgentInput(overrides: Record<string, any> = {}) {
   return {
@@ -49,42 +49,58 @@ describe('handleShValidateAgentInfo', () => {
   })
 
   it('fails for non-resident without CO exception', async () => {
-    const result = await handleShValidateAgentInfo(createMockTask(validAgentInput({
-      residentState: 'CA',
-      requestedStates: ['UT'],
-    })))
+    const result = await handleShValidateAgentInfo(
+      createMockTask(
+        validAgentInput({
+          residentState: 'CA',
+          requestedStates: ['UT'],
+        }),
+      ),
+    )
     expect(result.status).toBe('FAILED')
     expect(result.outputData?.errors[0]).toContain('not eligible')
   })
 
   it('succeeds for non-resident with CO exception (CO only)', async () => {
-    const result = await handleShValidateAgentInfo(createMockTask(validAgentInput({
-      residentState: 'CA',
-      requestedStates: ['CO'],
-      hasC4CoCertification: true,
-      hasCoLicense: true,
-    })))
+    const result = await handleShValidateAgentInfo(
+      createMockTask(
+        validAgentInput({
+          residentState: 'CA',
+          requestedStates: ['CO'],
+          hasC4CoCertification: true,
+          hasCoLicense: true,
+        }),
+      ),
+    )
     expect(result.status).toBe('COMPLETED')
     expect(result.outputData?.approvedStates).toEqual(['CO'])
   })
 
   it('fails for non-resident with CO exception requesting multiple states', async () => {
-    const result = await handleShValidateAgentInfo(createMockTask(validAgentInput({
-      residentState: 'CA',
-      requestedStates: ['CO', 'UT'],
-      hasC4CoCertification: true,
-      hasCoLicense: true,
-    })))
+    const result = await handleShValidateAgentInfo(
+      createMockTask(
+        validAgentInput({
+          residentState: 'CA',
+          requestedStates: ['CO', 'UT'],
+          hasC4CoCertification: true,
+          hasCoLicense: true,
+        }),
+      ),
+    )
     expect(result.status).toBe('FAILED')
     expect(result.outputData?.errors[0]).toContain('can only appoint for CO')
   })
 
   it('demotes errors to warnings with ignoreValidationErrors', async () => {
-    const result = await handleShValidateAgentInfo(createMockTask(validAgentInput({
-      residentState: 'CA',
-      requestedStates: ['UT'],
-      ignoreValidationErrors: true,
-    })))
+    const result = await handleShValidateAgentInfo(
+      createMockTask(
+        validAgentInput({
+          residentState: 'CA',
+          requestedStates: ['UT'],
+          ignoreValidationErrors: true,
+        }),
+      ),
+    )
     expect(result.status).toBe('COMPLETED')
     expect(result.outputData?.warnings).toBeDefined()
     expect(result.outputData?.warnings.length).toBeGreaterThan(0)

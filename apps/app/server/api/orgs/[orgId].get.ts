@@ -1,4 +1,3 @@
-
 /** GET /api/orgs/:orgId — Get organization details */
 export default defineEventHandler(async (event) => {
   const session = await getUserSession(event)

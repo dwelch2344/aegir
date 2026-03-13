@@ -1,15 +1,15 @@
-import type { TaskResult } from "../conductor.js";
+import type { TaskResult } from '../conductor.js'
 
 export function handleSendWelcomeEmail(task: any): TaskResult {
-  const { email, name, accountId } = task.inputData ?? {};
+  const { email, name, accountId } = task.inputData ?? {}
 
   if (!email || !accountId) {
     return {
       workflowInstanceId: task.workflowInstanceId,
       taskId: task.taskId,
-      status: "FAILED",
-      outputData: { error: "Missing email or accountId" },
-    };
+      status: 'FAILED',
+      outputData: { error: 'Missing email or accountId' },
+    }
   }
 
   // In a real implementation this would call MailHog via SMTP.
@@ -17,7 +17,7 @@ export function handleSendWelcomeEmail(task: any): TaskResult {
   return {
     workflowInstanceId: task.workflowInstanceId,
     taskId: task.taskId,
-    status: "COMPLETED",
+    status: 'COMPLETED',
     outputData: {
       sent: true,
       to: email,
@@ -25,5 +25,5 @@ export function handleSendWelcomeEmail(task: any): TaskResult {
       sentAt: new Date().toISOString(),
     },
     logs: [{ log: `Welcome email sent to ${email}`, createdTime: Date.now() }],
-  };
+  }
 }

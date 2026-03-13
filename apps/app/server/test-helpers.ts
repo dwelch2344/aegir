@@ -14,10 +14,7 @@ export const mockSession = {
   },
 }
 
-export function createMockEvent(options: {
-  body?: any
-  params?: Record<string, string>
-} = {}) {
+export function createMockEvent(options: { body?: any; params?: Record<string, string> } = {}) {
   const event = {
     _body: options.body,
     _params: options.params || {},
@@ -32,10 +29,12 @@ export function createMockEvent(options: {
 export function setupNitroMocks() {
   const getUserSessionMock = vi.fn().mockResolvedValue(mockSession)
   const kcAdminMock = vi.fn().mockResolvedValue([])
-  const kcAdminRawMock = vi.fn().mockResolvedValue(new Response(null, {
-    status: 201,
-    headers: { Location: '/organizations/org-123' },
-  }))
+  const kcAdminRawMock = vi.fn().mockResolvedValue(
+    new Response(null, {
+      status: 201,
+      headers: { Location: '/organizations/org-123' },
+    }),
+  )
   const readBodyMock = vi.fn().mockResolvedValue({})
   const getRouterParamMock = vi.fn((event: any, name: string) => event._params?.[name])
   const createErrorMock = vi.fn((opts: any) => {

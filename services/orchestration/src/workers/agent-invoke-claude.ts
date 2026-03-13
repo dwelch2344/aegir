@@ -1,9 +1,9 @@
 import { spawn } from 'node:child_process'
-import { writeFile, unlink } from 'node:fs/promises'
-import { join } from 'node:path'
-import { tmpdir } from 'node:os'
 import { randomUUID } from 'node:crypto'
 import { createReadStream } from 'node:fs'
+import { unlink, writeFile } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import type { TaskResult } from '../conductor.js'
 
 function runClaude(promptFile: string, env: NodeJS.ProcessEnv): Promise<string> {
@@ -16,8 +16,12 @@ function runClaude(promptFile: string, env: NodeJS.ProcessEnv): Promise<string> 
     let stdout = ''
     let stderr = ''
 
-    child.stdout.on('data', (chunk: Buffer) => { stdout += chunk.toString() })
-    child.stderr.on('data', (chunk: Buffer) => { stderr += chunk.toString() })
+    child.stdout.on('data', (chunk: Buffer) => {
+      stdout += chunk.toString()
+    })
+    child.stderr.on('data', (chunk: Buffer) => {
+      stderr += chunk.toString()
+    })
 
     // Pipe prompt file into stdin
     const input = createReadStream(promptFile)

@@ -1,4 +1,3 @@
-
 /** DELETE /api/orgs/:orgId — Delete organization */
 export default defineEventHandler(async (event) => {
   const session = await getUserSession(event)

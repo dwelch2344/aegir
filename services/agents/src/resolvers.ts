@@ -45,13 +45,22 @@ export const resolvers: ResolverMap<RequestCradle> = {
     async create(this: RequestCradle, _: unknown, args: { input: { organizationId: number; title?: string } }) {
       return this.conversationsService.create(args.input)
     },
-    async update(this: RequestCradle, _: unknown, args: { id: string; input: { title?: string; workflowId?: string } }) {
+    async update(
+      this: RequestCradle,
+      _: unknown,
+      args: { id: string; input: { title?: string; workflowId?: string } },
+    ) {
       return this.conversationsService.update(args.id, args.input)
     },
     async delete(this: RequestCradle, _: unknown, args: { id: string }) {
       return this.conversationsService.delete(args.id)
     },
-    async addMessage(this: RequestCradle, _: unknown, args: { input: { conversationId: string; role: string; text: string } }, ctx: any) {
+    async addMessage(
+      this: RequestCradle,
+      _: unknown,
+      args: { input: { conversationId: string; role: string; text: string } },
+      ctx: any,
+    ) {
       const message = await this.conversationsService.addMessage(args.input)
       // Publish to subscription so connected clients get real-time updates
       ctx.pubsub?.publish({
@@ -60,7 +69,12 @@ export const resolvers: ResolverMap<RequestCradle> = {
       })
       return message
     },
-    async sendMessage(this: RequestCradle, _: unknown, args: { input: { conversationId: string; text: string } }, ctx: any) {
+    async sendMessage(
+      this: RequestCradle,
+      _: unknown,
+      args: { input: { conversationId: string; text: string } },
+      ctx: any,
+    ) {
       const { conversationId, text } = args.input
       const orchestrationUrl = process.env.ORCHESTRATION_URL || 'http://localhost:4010'
 
@@ -75,7 +89,9 @@ export const resolvers: ResolverMap<RequestCradle> = {
       }
 
       // Check if conversation already has a persistent workflow
-      const { results: [convo] } = await this.conversationsService.search({ idIn: [conversationId] })
+      const {
+        results: [convo],
+      } = await this.conversationsService.search({ idIn: [conversationId] })
       let workflowId = convo?.workflowId
 
       if (!workflowId) {
@@ -85,14 +101,14 @@ export const resolvers: ResolverMap<RequestCradle> = {
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ conversationId }),
         })
-        const startData = await startRes.json() as { workflowId: string }
+        const startData = (await startRes.json()) as { workflowId: string }
         workflowId = startData.workflowId
 
         // Save workflowId on the conversation
         await this.conversationsService.update(conversationId, { workflowId })
 
         // Brief pause so Conductor schedules the WAIT task before we signal it
-        await new Promise(r => setTimeout(r, 1000))
+        await new Promise((r) => setTimeout(r, 1000))
       }
 
       // Signal the WAIT task with the user's message
@@ -108,8 +124,7 @@ export const resolvers: ResolverMap<RequestCradle> = {
   Subscription: {
     agentsMessageAdded: {
       subscribe: withFilter(
-        (_root: unknown, _args: unknown, { pubsub }: any) =>
-          pubsub.subscribe('AGENTS_MESSAGE_ADDED'),
+        (_root: unknown, _args: unknown, { pubsub }: any) => pubsub.subscribe('AGENTS_MESSAGE_ADDED'),
         (payload: any, args: { conversationId: string }) => {
           return payload.agentsMessageAdded.conversationId === args.conversationId
         },

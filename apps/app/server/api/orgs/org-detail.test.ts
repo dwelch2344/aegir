@@ -1,5 +1,5 @@
-import { describe, it, expect, beforeEach, vi } from 'vitest'
-import { setupNitroMocks, createMockEvent } from '../../test-helpers.js'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { createMockEvent, setupNitroMocks } from '../../test-helpers.js'
 
 describe('GET /api/orgs/:orgId', () => {
   let mocks: ReturnType<typeof setupNitroMocks>
@@ -55,10 +55,13 @@ describe('PUT /api/orgs/:orgId', () => {
     const result = await handler(createMockEvent({ params: { orgId: 'org-1' } }))
 
     expect(result).toEqual({ ok: true })
-    expect(mocks.kcAdmin).toHaveBeenCalledWith('/organizations/org-1', expect.objectContaining({
-      method: 'PUT',
-      body: expect.objectContaining({ name: 'New Name', description: 'Old desc' }),
-    }))
+    expect(mocks.kcAdmin).toHaveBeenCalledWith(
+      '/organizations/org-1',
+      expect.objectContaining({
+        method: 'PUT',
+        body: expect.objectContaining({ name: 'New Name', description: 'Old desc' }),
+      }),
+    )
   })
 })
 

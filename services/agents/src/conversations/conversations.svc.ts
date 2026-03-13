@@ -90,10 +90,7 @@ export default class ConversationsService {
       input,
     )
     // Touch the conversation's updated_at
-    await this.db.query(
-      `UPDATE conversation SET updated_at = now() WHERE id = :id`,
-      { id: input.conversationId },
-    )
+    await this.db.query(`UPDATE conversation SET updated_at = now() WHERE id = :id`, { id: input.conversationId })
     return rows[0]
   }
 }

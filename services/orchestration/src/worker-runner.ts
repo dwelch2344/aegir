@@ -1,17 +1,17 @@
 import { pollTask, updateTask } from './conductor.js'
-import { handleValidateIdentity } from './workers/validate-identity.js'
-import { handleProvisionAccount } from './workers/provision-account.js'
-import { handleSendWelcomeEmail } from './workers/send-welcome-email.js'
-import { handleShValidateAgentInfo } from './workers/sh-validate-agent-info.js'
-import { handleShCreateSirconAffiliation } from './workers/sh-create-sircon-affiliation.js'
-import { handleShRequestContract } from './workers/sh-request-contract.js'
-import { handleShAgentSignsDocusign } from './workers/sh-agent-signs-docusign.js'
-import { handleShHfCountersignAndTraining } from './workers/sh-hf-countersign-and-training.js'
-import { handleShCarrierProcessing } from './workers/sh-carrier-processing.js'
-import { handleShFinalizeContract } from './workers/sh-finalize-contract.js'
+import { handleAgentDeliverResponse } from './workers/agent-deliver-response.js'
 import { handleAgentGatherContext } from './workers/agent-gather-context.js'
 import { handleAgentInvokeClaude } from './workers/agent-invoke-claude.js'
-import { handleAgentDeliverResponse } from './workers/agent-deliver-response.js'
+import { handleProvisionAccount } from './workers/provision-account.js'
+import { handleSendWelcomeEmail } from './workers/send-welcome-email.js'
+import { handleShAgentSignsDocusign } from './workers/sh-agent-signs-docusign.js'
+import { handleShCarrierProcessing } from './workers/sh-carrier-processing.js'
+import { handleShCreateSirconAffiliation } from './workers/sh-create-sircon-affiliation.js'
+import { handleShFinalizeContract } from './workers/sh-finalize-contract.js'
+import { handleShHfCountersignAndTraining } from './workers/sh-hf-countersign-and-training.js'
+import { handleShRequestContract } from './workers/sh-request-contract.js'
+import { handleShValidateAgentInfo } from './workers/sh-validate-agent-info.js'
+import { handleValidateIdentity } from './workers/validate-identity.js'
 
 type TaskHandler = (task: any) => TaskResult | Promise<TaskResult>
 
@@ -60,7 +60,7 @@ async function runWorkerLoop(taskType: string, signal: AbortSignal) {
       }
     }
     if (!signal.aborted) {
-      await new Promise(r => setTimeout(r, POLL_INTERVAL_MS))
+      await new Promise((r) => setTimeout(r, POLL_INTERVAL_MS))
     }
   }
 }

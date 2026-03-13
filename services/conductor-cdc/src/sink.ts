@@ -1,16 +1,13 @@
-import pg from "pg";
-import { getEnv } from "@aegir/common";
-import { kafka, TOPICS } from "./kafka.js";
-import { WorkflowEventSchema, TaskEventSchema } from "./schemas.js";
-import { decodeStripHeader } from "./schema-registry.js";
+import { getEnv } from '@aegir/common'
+import pg from 'pg'
+import { kafka, TOPICS } from './kafka.js'
+import { decodeStripHeader } from './schema-registry.js'
+import { TaskEventSchema, WorkflowEventSchema } from './schemas.js'
 
-const CDC_DATABASE_URL = getEnv(
-  "CDC_DATABASE_URL",
-  "postgresql://aegir:aegir_dev@postgres:5432/conductor_cdc",
-);
+const CDC_DATABASE_URL = getEnv('CDC_DATABASE_URL', 'postgresql://aegir:aegir_dev@postgres:5432/conductor_cdc')
 
 export async function initSinkDb(): Promise<pg.Pool> {
-  const pool = new pg.Pool({ connectionString: CDC_DATABASE_URL });
+  const pool = new pg.Pool({ connectionString: CDC_DATABASE_URL })
 
   await pool.query(`
     CREATE TABLE IF NOT EXISTS workflow_events (
@@ -58,17 +55,17 @@ export async function initSinkDb(): Promise<pg.Pool> {
     CREATE INDEX IF NOT EXISTS idx_task_events_workflow_id ON task_events(workflow_id);
     CREATE INDEX IF NOT EXISTS idx_task_events_status ON task_events(status);
     CREATE INDEX IF NOT EXISTS idx_task_events_type ON task_events(task_type);
-  `);
-  console.log("[cdc] sink tables initialized");
-  return pool;
+  `)
+  console.log('[cdc] sink tables initialized')
+  return pool
 }
 
 function parseJsonSafe(val: string | null): object | null {
-  if (!val) return null;
+  if (!val) return null
   try {
-    return JSON.parse(val);
+    return JSON.parse(val)
   } catch {
-    return null;
+    return null
   }
 }
 
@@ -76,31 +73,28 @@ function parseJsonSafe(val: string | null): object | null {
  * Starts the sink consumer: reads Avro-encoded events from the normalized topics
  * and upserts them into our postgres database.
  */
-export async function startSinkConsumer(
-  pool: pg.Pool,
-  signal: AbortSignal,
-): Promise<void> {
-  const consumer = kafka.consumer({ groupId: "conductor-cdc-sink" });
-  await consumer.connect();
+export async function startSinkConsumer(pool: pg.Pool, signal: AbortSignal): Promise<void> {
+  const consumer = kafka.consumer({ groupId: 'conductor-cdc-sink' })
+  await consumer.connect()
   await consumer.subscribe({
     topics: [TOPICS.WORKFLOW_EVENTS, TOPICS.TASK_EVENTS],
     fromBeginning: true,
-  });
+  })
 
-  signal.addEventListener("abort", async () => {
-    console.log("[cdc] shutting down sink consumer...");
-    await consumer.disconnect();
-    await pool.end();
-  });
+  signal.addEventListener('abort', async () => {
+    console.log('[cdc] shutting down sink consumer...')
+    await consumer.disconnect()
+    await pool.end()
+  })
 
   await consumer.run({
     eachMessage: async ({ topic, message }) => {
-      if (!message.value) return;
+      if (!message.value) return
 
-      const { payload } = decodeStripHeader(message.value as Buffer);
+      const { payload } = decodeStripHeader(message.value as Buffer)
 
       if (topic === TOPICS.WORKFLOW_EVENTS) {
-        const event = WorkflowEventSchema.fromBuffer(payload);
+        const event = WorkflowEventSchema.fromBuffer(payload)
         await pool.query(
           `INSERT INTO workflow_events
             (event_type, workflow_id, workflow_type, version, status,
@@ -122,14 +116,12 @@ export async function startSinkConsumer(
             event.update_time,
             event.captured_at,
           ],
-        );
-        console.log(
-          `[sink] persisted workflow event: ${event.workflow_id} (${event.status})`,
-        );
+        )
+        console.log(`[sink] persisted workflow event: ${event.workflow_id} (${event.status})`)
       }
 
       if (topic === TOPICS.TASK_EVENTS) {
-        const event = TaskEventSchema.fromBuffer(payload);
+        const event = TaskEventSchema.fromBuffer(payload)
         await pool.query(
           `INSERT INTO task_events
             (event_type, task_id, workflow_id, task_type, reference_task_name,
@@ -152,11 +144,9 @@ export async function startSinkConsumer(
             event.retry_count,
             event.captured_at,
           ],
-        );
-        console.log(
-          `[sink] persisted task event: ${event.task_id} (${event.task_type} → ${event.status})`,
-        );
+        )
+        console.log(`[sink] persisted task event: ${event.task_id} (${event.task_type} → ${event.status})`)
       }
     },
-  });
+  })
 }

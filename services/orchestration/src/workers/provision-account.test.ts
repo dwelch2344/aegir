@@ -1,14 +1,16 @@
-import { describe, it, expect } from 'vitest'
-import { handleProvisionAccount } from './provision-account.js'
+import { describe, expect, it } from 'vitest'
 import { createMockTask } from '../test-helpers.js'
+import { handleProvisionAccount } from './provision-account.js'
 
 describe('handleProvisionAccount', () => {
   it('succeeds with valid identityId', () => {
-    const result = handleProvisionAccount(createMockTask({
-      identityId: 'id-123',
-      email: 'alice@test.com',
-      name: 'Alice',
-    }))
+    const result = handleProvisionAccount(
+      createMockTask({
+        identityId: 'id-123',
+        email: 'alice@test.com',
+        name: 'Alice',
+      }),
+    )
     expect(result.status).toBe('COMPLETED')
     expect(result.outputData?.accountId).toMatch(/^acct-/)
     expect(result.outputData?.identityId).toBe('id-123')

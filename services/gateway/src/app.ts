@@ -1,6 +1,6 @@
-import Fastify from 'fastify'
 import cors from '@fastify/cors'
 import gateway from '@mercuriusjs/gateway'
+import Fastify from 'fastify'
 import { config } from './config.js'
 
 export function createApp() {

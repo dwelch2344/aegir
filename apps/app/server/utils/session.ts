@@ -1,6 +1,6 @@
+import type { H3Event } from 'h3'
 import { getUserSession as _getUserSession } from 'nuxt-oidc-auth/runtime/server/utils/session.js'
 import { kcAdmin } from './keycloak-admin'
-import type { H3Event } from 'h3'
 
 /** Wraps the OIDC getUserSession to hydrate userInfo from the JWT access token. */
 export async function getUserSession(event: H3Event) {

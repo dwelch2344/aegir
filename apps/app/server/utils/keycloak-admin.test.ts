@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 // Mock $fetch and fetch before importing
 const mockFetch = vi.fn()
@@ -56,9 +56,7 @@ describe('kcAdmin', () => {
     })
 
     // Token may be cached from previous test, so find the admin API call
-    const adminCall = mockFetch.mock.calls.find((c) =>
-      typeof c[0] === 'string' && c[0].includes('/admin/'),
-    )
+    const adminCall = mockFetch.mock.calls.find((c) => typeof c[0] === 'string' && c[0].includes('/admin/'))
     expect(adminCall).toBeDefined()
     expect(adminCall![1].method).toBe('POST')
     expect(adminCall![1].body).toBe('user-123')

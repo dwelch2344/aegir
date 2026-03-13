@@ -35,9 +35,7 @@ export function useOrg() {
     try {
       const config = useRuntimeConfig()
       // Server-side: use internal service URL; client-side: use public (via reverse proxy)
-      const gatewayUrl = import.meta.server
-        ? config.gatewayUrl as string
-        : config.public.gatewayUrl as string
+      const gatewayUrl = import.meta.server ? (config.gatewayUrl as string) : (config.public.gatewayUrl as string)
 
       // 1. Get user's Keycloak orgs (membership source of truth)
       const headers = import.meta.server ? useRequestHeaders(['cookie']) : undefined
@@ -53,7 +51,10 @@ export function useOrg() {
       // 2. Sync Keycloak orgs into IAM (upsert by keycloakId)
       const syncInput = kcOrgs.map((kc) => ({
         keycloakId: kc.id,
-        key: kc.name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, ''),
+        key: kc.name
+          .toLowerCase()
+          .replace(/[^a-z0-9]+/g, '-')
+          .replace(/^-|-$/g, ''),
         name: kc.name,
       }))
 
@@ -67,12 +68,18 @@ export function useOrg() {
           variables: { input: syncInput },
         }),
       })
-      const json = await response.json() as { data?: { iam: { orgs: { sync: Org[] } } }; errors?: { message: string }[] }
+      const json = (await response.json()) as {
+        data?: { iam: { orgs: { sync: Org[] } } }
+        errors?: { message: string }[]
+      }
 
       if (json.errors?.length) {
         logger.error('Failed to sync orgs to IAM', json.errors)
         // Fallback: try to query existing orgs by keycloak IDs
-        const fallback = await fetchOrgsByKeycloakIds(gatewayUrl, kcOrgs.map(o => o.id))
+        const fallback = await fetchOrgsByKeycloakIds(
+          gatewayUrl,
+          kcOrgs.map((o) => o.id),
+        )
         orgs.value = fallback
       } else {
         orgs.value = json.data!.iam.orgs.sync
@@ -100,7 +107,9 @@ export function useOrg() {
     if (prev !== orgId) {
       // Notify all listeners
       for (const cb of orgSwitchCallbacks) {
-        try { cb(orgId) } catch {}
+        try {
+          cb(orgId)
+        } catch {}
       }
     }
   }
@@ -139,7 +148,7 @@ async function fetchOrgsByKeycloakIds(gatewayUrl: string, keycloakIds: string[])
         variables: { input: { keycloakIdIn: keycloakIds } },
       }),
     })
-    const json = await response.json() as any
+    const json = (await response.json()) as any
     return json.data?.iam?.orgs?.search?.results ?? []
   } catch {
     return []

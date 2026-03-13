@@ -1,5 +1,5 @@
 import type { TaskResult } from '../conductor.js'
-import { randomDelay, log } from '../utils.js'
+import { log, randomDelay } from '../utils.js'
 
 export async function handleShCarrierProcessing(task: any): Promise<TaskResult> {
   const { contractId, agentFullName } = task.inputData ?? {}

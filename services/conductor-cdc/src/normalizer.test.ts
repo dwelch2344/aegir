@@ -1,5 +1,5 @@
-import { describe, it, expect } from 'vitest'
-import { normalizeWorkflowEvent, normalizeTaskEvent } from './normalizer.js'
+import { describe, expect, it } from 'vitest'
+import { normalizeTaskEvent, normalizeWorkflowEvent } from './normalizer.js'
 
 describe('normalizeWorkflowEvent', () => {
   it('normalizes a create event with json_data', () => {

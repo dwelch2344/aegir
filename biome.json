@@ -1,12 +1,13 @@
 {
-  "$schema": "https://biomejs.dev/schemas/2.0.0/schema.json",
+  "$schema": "https://biomejs.dev/schemas/2.4.7/schema.json",
   "vcs": {
     "enabled": true,
     "clientKind": "git",
     "useIgnoreFile": true
   },
-  "organizeImports": {
-    "enabled": true
+  "files": {
+    "ignoreUnknown": true,
+    "includes": ["**/*.ts", "**/*.js", "**/*.json", "**/*.jsonc"]
   },
   "formatter": {
     "enabled": true,
@@ -20,6 +21,9 @@
       "recommended": true,
       "suspicious": {
         "noExplicitAny": "off"
+      },
+      "complexity": {
+        "noBannedTypes": "off"
       },
       "style": {
         "noNonNullAssertion": "off"
@@ -37,13 +41,12 @@
       "trailingCommas": "none"
     }
   },
-  "files": {
-    "ignore": [
-      "dist/",
-      "node_modules/",
-      ".nuxt/",
-      ".output/",
-      "*.sql"
-    ]
+  "assist": {
+    "enabled": true,
+    "actions": {
+      "source": {
+        "organizeImports": "on"
+      }
+    }
   }
 }

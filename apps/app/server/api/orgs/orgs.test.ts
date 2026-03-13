@@ -1,5 +1,5 @@
-import { describe, it, expect, beforeEach, vi } from 'vitest'
-import { setupNitroMocks, mockSession, createMockEvent } from '../../test-helpers.js'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { createMockEvent, mockSession, setupNitroMocks } from '../../test-helpers.js'
 
 describe('GET /api/orgs', () => {
   let mocks: ReturnType<typeof setupNitroMocks>
@@ -16,7 +16,10 @@ describe('GET /api/orgs', () => {
   }
 
   it('returns orgs for the authenticated user', async () => {
-    const orgList = [{ id: 'org-1', name: 'Acme' }, { id: 'org-2', name: 'Beta' }]
+    const orgList = [
+      { id: 'org-1', name: 'Acme' },
+      { id: 'org-2', name: 'Beta' },
+    ]
     mocks.kcAdmin.mockResolvedValue(orgList)
 
     const handler = await getHandler()
@@ -58,24 +61,32 @@ describe('POST /api/orgs', () => {
 
   it('creates an org and adds the user as a member', async () => {
     mocks.readBody.mockResolvedValue({ name: 'New Org', description: 'test' })
-    mocks.kcAdminRaw.mockResolvedValue(new Response(null, {
-      status: 201,
-      headers: { Location: '/admin/realms/global/organizations/org-new' },
-    }))
+    mocks.kcAdminRaw.mockResolvedValue(
+      new Response(null, {
+        status: 201,
+        headers: { Location: '/admin/realms/global/organizations/org-new' },
+      }),
+    )
 
     const handler = await getHandler()
     const result = await handler(createMockEvent())
 
     expect(result).toEqual({ id: 'org-new', name: 'New Org' })
-    expect(mocks.kcAdminRaw).toHaveBeenCalledWith('/organizations', expect.objectContaining({
-      method: 'POST',
-      body: expect.objectContaining({ name: 'New Org' }),
-    }))
+    expect(mocks.kcAdminRaw).toHaveBeenCalledWith(
+      '/organizations',
+      expect.objectContaining({
+        method: 'POST',
+        body: expect.objectContaining({ name: 'New Org' }),
+      }),
+    )
     // Should add creator as member
-    expect(mocks.kcAdmin).toHaveBeenCalledWith('/organizations/org-new/members', expect.objectContaining({
-      method: 'POST',
-      body: 'user-123',
-    }))
+    expect(mocks.kcAdmin).toHaveBeenCalledWith(
+      '/organizations/org-new/members',
+      expect.objectContaining({
+        method: 'POST',
+        body: 'user-123',
+      }),
+    )
   })
 
   it('throws 400 when name is empty', async () => {
@@ -94,10 +105,12 @@ describe('POST /api/orgs', () => {
 
   it('trims whitespace from name', async () => {
     mocks.readBody.mockResolvedValue({ name: '  Padded Name  ' })
-    mocks.kcAdminRaw.mockResolvedValue(new Response(null, {
-      status: 201,
-      headers: { Location: '/organizations/org-padded' },
-    }))
+    mocks.kcAdminRaw.mockResolvedValue(
+      new Response(null, {
+        status: 201,
+        headers: { Location: '/organizations/org-padded' },
+      }),
+    )
 
     const handler = await getHandler()
     const result = await handler(createMockEvent())
