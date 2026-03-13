@@ -1,0 +1,308 @@
+id: build.pnpm-turbo
+version: "0.1.0"
+name: Monorepo Build Tooling (pnpm + Turborepo)
+description: >
+  Sets up a monorepo build system using pnpm workspaces for dependency management
+  and Turborepo for orchestrating builds, tests, and dev servers across packages.
+  Includes a shared TypeScript base config, tsup for package bundling, Biome for
+  formatting and linting, and Vitest for testing. Workspace packages are organized
+  under packages/, services/, and apps/ directories.
+
+preconditions: []
+
+provides:
+  - monorepo.workspace
+  - build.typescript
+  - build.bundler.tsup
+  - build.orchestrator.turbo
+  - lint.biome
+  - test.vitest
+
+parameters:
+  org_scope:
+    type: string
+    required: true
+    description: >
+      The npm organization scope used for internal packages (e.g. "@aegir").
+      All workspace packages will be published under this scope.
+  node_target:
+    type: string
+    required: false
+    default: "ES2022"
+    description: >
+      The ECMAScript target version for TypeScript compilation.
+  workspace_dirs:
+    type: string
+    required: false
+    default: "packages/*,services/*,apps/*"
+    description: >
+      Comma-separated glob patterns for workspace package directories in pnpm-workspace.yaml.
+
+application_instructions: |
+  ## 1. Root package.json
+
+  Create or update the root `package.json` with the following structure:
+
+  ```json
+  {
+    "name": "<project-name>",
+    "private": true,
+    "packageManager": "pnpm@10.16.1",
+    "type": "module",
+    "scripts": {
+      "dev": "turbo dev --ui=stream --log-order=stream",
+      "build": "turbo build",
+      "test": "turbo test",
+      "lint": "biome check .",
+      "lint:fix": "biome check --write .",
+      "format": "biome format --write ."
+    },
+    "devDependencies": {
+      "@biomejs/biome": "^2.4.7",
+      "turbo": "^2.0.0",
+      "typescript": "^5.7.0"
+    },
+    "pnpm": {
+      "onlyBuiltDependencies": ["esbuild", "@parcel/watcher"]
+    }
+  }
+  ```
+
+  Set `"private": true` to prevent accidental publishing of the root.
+
+  ## 2. pnpm-workspace.yaml
+
+  Create `pnpm-workspace.yaml` at the repo root listing workspace directories:
+
+  ```yaml
+  packages:
+    - "packages/*"
+    - "services/*"
+    - "apps/*"
+  ```
+
+  Adjust the list based on the `workspace_dirs` parameter.
+
+  ## 3. tsconfig.base.json
+
+  Create `tsconfig.base.json` at the repo root with shared compiler options:
+
+  ```json
+  {
+    "compilerOptions": {
+      "target": "<node_target parameter, default ES2022>",
+      "module": "ESNext",
+      "moduleResolution": "bundler",
+      "strict": true,
+      "esModuleInterop": true,
+      "skipLibCheck": true,
+      "forceConsistentCasingInFileNames": true,
+      "resolveJsonModule": true,
+      "isolatedModules": true,
+      "declaration": true,
+      "declarationMap": true,
+      "sourceMap": true
+    }
+  }
+  ```
+
+  Individual packages extend this via their own `tsconfig.json`:
+
+  ```json
+  {
+    "extends": "../../tsconfig.base.json",
+    "compilerOptions": {
+      "outDir": "dist",
+      "rootDir": "src"
+    },
+    "include": ["src"]
+  }
+  ```
+
+  ## 4. turbo.json
+
+  Create `turbo.json` at the repo root to define task pipelines:
+
+  ```json
+  {
+    "$schema": "https://turbo.build/schema.json",
+    "tasks": {
+      "build": {
+        "dependsOn": ["^build"],
+        "outputs": ["dist/**", ".nuxt/**", ".output/**"]
+      },
+      "dev": {
+        "dependsOn": ["^build"],
+        "persistent": true,
+        "cache": false
+      },
+      "test": {
+        "dependsOn": ["^build"]
+      },
+      "lint": {}
+    }
+  }
+  ```
+
+  Key points:
+  - `"^build"` means a package's build waits for its dependencies' builds to finish.
+  - `dev` is marked `persistent` and uncached since it runs a long-lived process.
+  - `outputs` lists directories Turbo should cache.
+
+  ## 5. biome.json
+
+  Create `biome.json` at the repo root for formatting and linting:
+
+  ```json
+  {
+    "$schema": "https://biomejs.dev/schemas/2.4.7/schema.json",
+    "vcs": {
+      "enabled": true,
+      "clientKind": "git",
+      "useIgnoreFile": true
+    },
+    "files": {
+      "ignoreUnknown": true,
+      "includes": ["**/*.ts", "**/*.js", "**/*.json", "**/*.jsonc"]
+    },
+    "formatter": {
+      "enabled": true,
+      "indentStyle": "space",
+      "indentWidth": 2,
+      "lineWidth": 120
+    },
+    "linter": {
+      "enabled": true,
+      "rules": {
+        "recommended": true
+      }
+    },
+    "javascript": {
+      "formatter": {
+        "quoteStyle": "single",
+        "semicolons": "asNeeded"
+      }
+    },
+    "json": {
+      "formatter": {
+        "trailingCommas": "none"
+      }
+    },
+    "assist": {
+      "enabled": true,
+      "actions": {
+        "source": {
+          "organizeImports": "on"
+        }
+      }
+    }
+  }
+  ```
+
+  ## 6. Workspace Package Structure
+
+  Each workspace package follows this structure:
+
+  ```
+  packages/<name>/
+    ├── package.json
+    ├── tsconfig.json
+    ├── tsup.config.ts
+    └── src/
+        └── index.ts
+  ```
+
+  **package.json** for a workspace package:
+
+  ```json
+  {
+    "name": "<org_scope>/<name>",
+    "version": "0.0.1",
+    "private": true,
+    "type": "module",
+    "exports": {
+      ".": {
+        "import": "./dist/index.js",
+        "types": "./dist/index.d.ts"
+      }
+    },
+    "scripts": {
+      "build": "tsup",
+      "dev": "tsup --watch",
+      "test": "vitest run",
+      "test:watch": "vitest"
+    },
+    "devDependencies": {
+      "@types/node": "^22.0.0",
+      "tsup": "^8.0.0",
+      "typescript": "^5.7.0",
+      "vitest": "^3.0.0"
+    }
+  }
+  ```
+
+  **tsup.config.ts** for a workspace package:
+
+  ```typescript
+  import { defineConfig } from 'tsup'
+
+  export default defineConfig({
+    entry: ['src/index.ts'],
+    format: ['esm'],
+    dts: true,
+    clean: !process.argv.includes('--watch'),
+  })
+  ```
+
+  ## 7. Install Dependencies
+
+  Run `pnpm install` from the repo root. This installs all workspace dependencies
+  and links internal packages automatically.
+
+  ## 8. Verify
+
+  - Run `pnpm build` to confirm Turbo orchestrates builds across all packages.
+  - Run `pnpm test` to run tests across all packages.
+  - Run `pnpm lint` to check formatting and lint rules.
+
+test_criteria:
+  - description: pnpm install completes successfully with no errors
+    command: pnpm install --frozen-lockfile
+  - description: TypeScript type-checking passes across all packages
+    command: pnpm -r exec tsc --noEmit
+  - description: Turbo build succeeds for all packages
+    command: pnpm build
+  - description: Turbo test succeeds for all packages
+    command: pnpm test
+  - description: Biome lint and format checks pass
+    command: pnpm lint
+  - description: Workspace packages resolve internal dependencies correctly
+    manual: >
+      Add a dependency from one workspace package to another (e.g.
+      "@aegir/common" as a dependency of a service), run pnpm install,
+      then import a symbol from the dependency and confirm the build
+      and type-checking still pass.
+
+security_notes: |
+  - Pin exact versions of critical build tooling (pnpm, turbo, typescript) in
+    the root package.json using the `packageManager` field and caret ranges.
+  - Run `pnpm audit` regularly to check for known vulnerabilities in the
+    dependency tree.
+  - Use `pnpm.onlyBuiltDependencies` to restrict which packages are allowed
+    to execute install scripts, reducing supply-chain attack surface.
+  - Keep the pnpm lockfile (`pnpm-lock.yaml`) committed and use
+    `--frozen-lockfile` in CI to prevent unreviewed dependency changes.
+  - Avoid publishing internal packages publicly — set `"private": true` on
+    all workspace packages that are not intended for the npm registry.
+
+touchpoints:
+  - package.json
+  - pnpm-workspace.yaml
+  - pnpm-lock.yaml
+  - tsconfig.base.json
+  - turbo.json
+  - biome.json
+  - packages/<name>/package.json
+  - packages/<name>/tsconfig.json
+  - packages/<name>/tsup.config.ts
+  - packages/<name>/src/index.ts

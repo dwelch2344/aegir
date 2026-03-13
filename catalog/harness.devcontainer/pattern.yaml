@@ -1,0 +1,312 @@
+id: harness.devcontainer
+version: "0.1.0"
+name: Local Development Harness (DevContainer + Docker Compose + Traefik)
+description: >
+  A fully self-contained local development environment built on VS Code
+  DevContainers, Docker Compose, and Traefik. The stack mirrors a Kubernetes
+  deployment topology: Traefik acts as an Ingress controller providing
+  single-port, path-based routing; Docker Compose DNS provides service
+  discovery equivalent to Kubernetes Services; environment variables serve
+  the role of ConfigMaps; bind-mount volumes act as PersistentVolumes; and
+  container health checks map directly to readiness/liveness probes. The
+  result is a local environment where routing, naming, and configuration
+  patterns match production, eliminating "works on my machine" drift.
+
+preconditions: []
+
+provides:
+  - local-dev-environment
+  - single-port-ingress
+  - path-based-routing
+  - postgres-database
+  - redis-cache
+  - s3-compatible-storage
+  - event-streaming
+  - schema-registry
+  - change-data-capture
+  - identity-provider
+  - workflow-engine
+  - observability-stack
+  - email-capture
+  - idempotent-init
+
+parameters:
+  projectName:
+    type: string
+    required: true
+    description: >
+      The Docker Compose project name and container name prefix
+      (e.g. "aegir").
+  ingressPort:
+    type: number
+    required: true
+    default: 7356
+    description: >
+      The single host port Traefik listens on. All services are reached
+      through path-based routing on this port.
+  postgresVersion:
+    type: string
+    required: false
+    default: "16-alpine"
+    description: PostgreSQL image tag.
+  keycloakVersion:
+    type: string
+    required: false
+    default: "26.5"
+    description: Keycloak image tag.
+  nodeVersion:
+    type: string
+    required: false
+    default: "24"
+    description: >
+      Node.js major version used in the devcontainer base image
+      (mcr.microsoft.com/devcontainers/javascript-node).
+
+application_instructions: |
+  ## 1. Directory layout
+
+  Create the following structure at the repository root:
+
+  ```
+  .devcontainer/
+    devcontainer.json          # VS Code / CLI devcontainer config
+    docker-compose.yml         # Full service stack
+    Dockerfile.devcontainer    # Dev container image
+    traefik/
+      traefik.yml              # Traefik static config (entrypoints, providers)
+      dynamic.yml              # Traefik dynamic config (routers, services, middlewares)
+    postgres/
+      init-databases.sql       # Seed SQL run on first Postgres start
+      01-enable-replication.sh  # Enable WAL logical replication for CDC
+    conductor/
+      Dockerfile               # Conductor (workflow engine) image
+      config.properties        # Conductor runtime config
+    conductor-ui/
+      Dockerfile               # Conductor UI image
+      nginx.conf               # Nginx config for Conductor UI
+    grafana/
+      datasources.yml          # Provisioned Grafana data sources
+      dashboards.yml           # Dashboard provisioning config
+      dashboards/              # JSON dashboard definitions
+    tempo/
+      tempo.yml                # Tempo (distributed tracing) config
+    promtail/
+      config.yml               # Promtail log shipping config
+    data/                      # Gitignored; bind-mount target for persistent state
+  scripts/
+    init.sh                    # Idempotent infrastructure bootstrap
+    destroy.sh                 # Tear down all persistent state
+  ```
+
+  ## 2. Docker Compose services
+
+  The `docker-compose.yml` defines these services:
+
+  | Service             | Image / Build                          | Role                          | K8s analogy          |
+  |---------------------|----------------------------------------|-------------------------------|----------------------|
+  | `aegir-dev`         | Build from `Dockerfile.devcontainer`   | Primary dev workspace         | Application Pod      |
+  | `traefik`           | `traefik:v3.3`                         | Reverse proxy / ingress       | Ingress Controller   |
+  | `postgres`          | `postgres:16-alpine`                   | Relational database           | StatefulSet + PV     |
+  | `redis`             | `redis:7-alpine`                       | Cache / session store         | StatefulSet + PV     |
+  | `minio`             | `minio/minio:latest`                   | S3-compatible object storage  | S3 / PV              |
+  | `keycloak`          | `keycloak:26.5`                        | Identity provider (OIDC)      | Deployment + Service |
+  | `redpanda`          | `redpanda:latest`                      | Kafka-compatible streaming    | StatefulSet + PV     |
+  | `redpanda-console`  | `redpanda-console:latest`              | Streaming admin UI            | Deployment + Service |
+  | `conductor`         | Build from `.devcontainer/conductor/`  | Workflow orchestration engine | Deployment + Service |
+  | `conductor-ui`      | Build from `.devcontainer/conductor-ui/` | Conductor admin UI          | Deployment + Service |
+  | `debezium-connect`  | `debezium/connect:2.5`                 | CDC connector                 | Deployment           |
+  | `mailhog`           | `mailhog/mailhog:latest`              | SMTP trap / email preview     | Deployment + Service |
+  | `grafana`           | `grafana/grafana:latest`               | Dashboards & visualization    | Deployment + Service |
+  | `prometheus`        | `prom/prometheus:latest`               | Metrics collection            | Deployment + PV      |
+  | `loki`              | `grafana/loki:latest`                  | Log aggregation               | Deployment + PV      |
+  | `promtail`          | `grafana/promtail:latest`              | Log shipper                   | DaemonSet            |
+  | `tempo`             | `grafana/tempo:2.7.2`                  | Distributed tracing           | Deployment + PV      |
+
+  ## 3. Traefik routing model
+
+  Traefik listens on a single entrypoint (`web`, port 80 inside the
+  container, mapped to the configured `ingressPort` on the host). All
+  traffic enters through this one port and is routed by path prefix:
+
+  | Path prefix          | Backend service      | Middleware            |
+  |----------------------|----------------------|-----------------------|
+  | `/app`               | aegir-dev:3000       | (none)                |
+  | `/api/graphql`       | aegir-dev:4000       | strip `/api`          |
+  | `/api/iam`           | aegir-dev:4001       | strip `/api/iam`      |
+  | `/api/system`        | aegir-dev:4002       | strip `/api/system`   |
+  | `/infra/idp`         | keycloak:8080        | (none, path-aware)    |
+  | `/infra/grafana`     | grafana:3000         | (none, sub-path mode) |
+  | `/infra/mailhog`     | mailhog:8025         | strip `/infra/mailhog`|
+  | `/infra/conductor`   | conductor-ui:5000    | (none)                |
+  | `/infra/redpanda`    | redpanda-console:8080| (none)                |
+  | `/`                  | redirect to `/app/`  | redirectRegex         |
+
+  Static config (`traefik.yml`) defines the `web` entrypoint on `:80`,
+  enables the API dashboard, and loads the dynamic config from a watched
+  file.
+
+  Dynamic config (`dynamic.yml`) defines routers with `PathPrefix` rules,
+  `stripPrefix` middlewares where the backend does not expect the prefix,
+  and `loadBalancer` services pointing to Docker DNS hostnames.
+
+  **K8s equivalence:** This is directly analogous to an NGINX Ingress or
+  Traefik IngressRoute with path-based rules. The same Traefik dynamic
+  config can be translated 1:1 into Kubernetes IngressRoute CRDs.
+
+  ## 4. Service discovery (Docker DNS = K8s Services)
+
+  Inside the Compose network every service is reachable by its service
+  name (e.g. `postgres`, `keycloak`, `redpanda`). This mirrors Kubernetes
+  ClusterIP service DNS (`<service>.<namespace>.svc.cluster.local`). No
+  hardcoded IPs are used anywhere; all inter-service communication uses
+  DNS names.
+
+  ## 5. Configuration (env vars = ConfigMaps)
+
+  All service configuration is passed via `environment:` blocks in
+  `docker-compose.yml`. This maps directly to Kubernetes ConfigMaps and
+  Secrets mounted as environment variables. The devcontainer also injects
+  `POD_NAME=local` and `LANE=local` via `containerEnv` in
+  `devcontainer.json` to simulate pod metadata.
+
+  ## 6. Persistent state (volumes = PVs)
+
+  Bind mounts under `.devcontainer/data/<service>` persist state across
+  container restarts, analogous to PersistentVolumeClaims in Kubernetes.
+  The `destroy.sh` script removes these directories for a clean slate.
+
+  ## 7. Health checks (= K8s probes)
+
+  Services with health checks defined:
+  - **postgres**: `pg_isready` (TCP + auth check)
+  - **redis**: `redis-cli ping`
+  - **minio**: `mc ready local`
+  - **redpanda**: `rpk cluster health`
+  - **keycloak**: HTTP HEAD to `/infra/idp/health/ready`
+  - **conductor**: HTTP GET to `/health`
+  - **debezium-connect**: HTTP GET to `/`
+
+  These map directly to Kubernetes `readinessProbe` / `livenessProbe`
+  definitions. The `depends_on` + `condition: service_healthy` blocks
+  enforce startup ordering, equivalent to init containers or
+  topology-aware scheduling.
+
+  ## 8. Init script flow (`scripts/init.sh`)
+
+  The init script is idempotent and safe to run repeatedly:
+  1. Waits for Postgres to accept connections (`pg_isready` poll).
+  2. Creates database users idempotently (`ensure_user`): keycloak,
+     iam_svc, conductor.
+  3. Creates databases idempotently (`ensure_database`): keycloak,
+     conductor, conductor_cdc.
+  4. Creates schemas idempotently (`ensure_schema`): iam (in aegir DB),
+     conductor (in aegir DB).
+  5. Configures Postgres `pg_hba.conf` for Debezium replication access.
+  6. Reloads Postgres config without restart.
+
+  ## 9. Devcontainer image (`Dockerfile.devcontainer`)
+
+  Based on `mcr.microsoft.com/devcontainers/javascript-node`. Installs:
+  - Docker CLI (for host Docker socket access)
+  - PostgreSQL client (`psql`, `pg_isready`)
+  - direnv (environment switching)
+  - OpenTofu (infrastructure-as-code)
+  - Claude Code CLI
+
+  The `node` user is added to the `docker` group. The container runs as
+  `node` (non-root) with `NET_ADMIN` and `NET_RAW` capabilities.
+
+  ## 10. Secret mounts
+
+  Host-side secrets are bind-mounted into the devcontainer via
+  `devcontainer.json` mounts:
+  - `~/.devcontainers/mount/<project>/secrets` -> `/home/node/.secrets`
+  - `~/.ssh` -> `/home/node/.ssh`
+  - `~/.git` -> `/home/node/.git`
+
+  These are never checked into version control.
+
+test_criteria:
+  - description: DevContainer starts and the dev service is running
+    command: docker ps --filter name=aegir-dev --format '{{.Status}}' | grep -q 'Up'
+
+  - description: All Docker Compose services are healthy or running
+    command: >-
+      docker compose -f .devcontainer/docker-compose.yml ps
+      --format '{{.Name}} {{.Status}}' | grep -v 'Exit' | wc -l
+      | xargs test 17 -le
+
+  - description: Traefik is listening on the ingress port and returns a response
+    command: curl -sf -o /dev/null http://localhost:7356/api/rawdata
+
+  - description: App route responds via Traefik path-based routing
+    command: curl -sf -o /dev/null -w '%{http_code}' http://localhost:7356/app/ | grep -qE '(200|302)'
+
+  - description: Keycloak IdP route responds via Traefik
+    command: curl -sf -o /dev/null http://localhost:7356/infra/idp/health/ready
+
+  - description: Grafana route responds via Traefik
+    command: curl -sf -o /dev/null http://localhost:7356/infra/grafana/api/health
+
+  - description: Postgres is accepting connections
+    command: docker exec aegir-postgres pg_isready -U aegir
+
+  - description: Redis is accepting connections
+    command: docker exec aegir-redis redis-cli ping | grep -q PONG
+
+  - description: Init script is idempotent (running twice produces no errors)
+    command: bash scripts/init.sh && bash scripts/init.sh
+
+  - description: Keycloak database was created by init script
+    command: >-
+      docker exec aegir-postgres psql -U aegir -tc
+      "SELECT 1 FROM pg_database WHERE datname='keycloak'" | grep -q 1
+
+  - description: Conductor database was created by init script
+    command: >-
+      docker exec aegir-postgres psql -U aegir -tc
+      "SELECT 1 FROM pg_database WHERE datname='conductor'" | grep -q 1
+
+security_notes: |
+  - **No production credentials**: All passwords in docker-compose.yml are
+    local-dev-only values (e.g. `aegir_dev`, `minioadmin`, `admin`). These
+    must never be used outside local development.
+  - **Secrets via mounted files**: Host secrets (SSH keys, API tokens) are
+    bind-mounted from `~/.devcontainers/mount/<project>/secrets` into the
+    container at `/home/node/.secrets`. They are never copied into images
+    or committed to version control.
+  - **OIDC session secrets are deterministic**: The `NUXT_OIDC_TOKEN_KEY`,
+    `NUXT_OIDC_SESSION_SECRET`, and `NUXT_OIDC_AUTH_SESSION_SECRET` values
+    are derived from known seeds for local reproducibility. Production
+    deployments must generate cryptographically random replacements.
+  - **Network isolation**: All services communicate over the default Docker
+    Compose network. Only Traefik's ingress port is exposed to the host.
+    Individual service ports (Postgres 5432, Redis 6379, etc.) are not
+    published, limiting the attack surface to the Traefik entrypoint.
+  - **Docker socket access**: The dev container mounts the host Docker
+    socket (`/var/run/docker.sock`). This grants the container effective
+    root access to the host Docker daemon. This is acceptable for local
+    development but must never be replicated in production or CI images.
+  - **Non-root container user**: The devcontainer runs as the `node` user
+    (non-root), with UID remapping enabled via `updateRemoteUserUID`.
+
+touchpoints:
+  - .devcontainer/devcontainer.json
+  - .devcontainer/docker-compose.yml
+  - .devcontainer/Dockerfile.devcontainer
+  - .devcontainer/traefik/traefik.yml
+  - .devcontainer/traefik/dynamic.yml
+  - .devcontainer/postgres/init-databases.sql
+  - .devcontainer/postgres/01-enable-replication.sh
+  - .devcontainer/conductor/Dockerfile
+  - .devcontainer/conductor/config.properties
+  - .devcontainer/conductor-ui/Dockerfile
+  - .devcontainer/conductor-ui/nginx.conf
+  - .devcontainer/grafana/datasources.yml
+  - .devcontainer/grafana/dashboards.yml
+  - .devcontainer/grafana/dashboards/
+  - .devcontainer/tempo/tempo.yml
+  - .devcontainer/promtail/config.yml
+  - .devcontainer/data/
+  - scripts/init.sh
+  - scripts/destroy.sh

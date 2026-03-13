@@ -1,6 +1,6 @@
 import type { ResolverMap } from '@moribashi/graphql'
 import type IntegrationsService from './integrations/integrations.svc.js'
-import type TenantIntegrationsService from './tenant-integrations/tenant-integrations.svc.js'
+import type TenantIntegrationsService from './tenantIntegrations/tenantIntegrations.svc.js'
 import type TenantsService from './tenants/tenants.svc.js'
 
 export interface RequestCradle {

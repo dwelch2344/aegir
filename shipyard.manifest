@@ -1,0 +1,85 @@
+# Aegir — Ship Zero
+# This is both the Shipyard and the first ship built on it.
+# The manifest describes aegir's current state as a ship.
+
+shipyard_version: "0.1"
+name: aegir
+type: web-app
+
+stack:
+  languages: [typescript]
+  frameworks: [moribashi, nuxt, fastify, mercurius]
+  runtime: node-22
+
+services:
+  - name: gateway
+    type: graphql-gateway
+    port: 4000
+  - name: iam
+    type: graphql-subgraph
+    port: 4001
+    schema: iam
+  - name: system
+    type: graphql-subgraph
+    port: 4002
+    schema: system
+  - name: agents
+    type: graphql-subgraph
+    port: 4003
+    schema: agents
+  - name: orchestration
+    type: worker
+    port: 4010
+
+catalog_refs:
+  - id: build.pnpm-turbo
+    version: 0.1.0
+  - id: harness.devcontainer
+    version: 0.1.0
+  - id: db.postgres-isolated
+    version: 0.1.0
+  - id: api.graphql-federation
+    version: 0.1.0
+  - id: auth.oidc-keycloak
+    version: 0.1.0
+  - id: tenancy.org-based
+    version: 0.1.0
+  - id: orchestration.conductor
+    version: 0.1.0
+  - id: cdc.debezium-kafka
+    version: 0.1.0
+  - id: observability.grafana-stack
+    version: 0.1.0
+  - id: storage.s3
+    version: 0.1.0
+  - id: email.smtp
+    version: 0.1.0
+  - id: frontend.nuxt-spa
+    version: 0.1.0
+  - id: agents.ai-conversation
+    version: 0.1.0
+  - id: infra.aws-eks-gitops
+    version: 0.1.0
+
+capabilities:
+  - graphql-federation
+  - oidc-auth
+  - org-based-tenancy
+  - workflow-orchestration
+  - cdc-event-streaming
+  - observability
+  - object-storage
+  - email
+  - frontend-spa
+  - ai-conversation
+
+constraints:
+  protected_paths:
+    - packages/domain/    # foundational domain model
+    - catalog/            # catalog entries are reviewed, not auto-modified
+    - shipyard.manifest   # manifest updated only by shipyard tooling
+
+conventions:
+  graphql_naming: moribashi
+  migration_format: flyway
+  service_scan_pattern: "**/*.svc.ts"

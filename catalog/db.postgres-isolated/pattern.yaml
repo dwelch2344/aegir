@@ -1,0 +1,228 @@
+id: db.postgres-isolated
+version: "0.1.0"
+name: PostgreSQL Schema-Per-Service Isolation
+description: >
+  Provisions a dedicated PostgreSQL schema, role, and least-privilege grants for
+  a service using OpenTofu (Terraform-compatible). Each service gets its own
+  schema within a shared database, its own login role with a unique password, and
+  grants limited to DML operations. Migrations follow the Flyway-style
+  V{version}__{description}.sql naming convention and run automatically on
+  service startup.
+
+preconditions:
+  - build.pnpm-turbo
+
+provides:
+  - db.postgres-schema
+  - db.postgres-role
+  - db.postgres-grants
+  - db.migrations
+
+parameters:
+  service_name:
+    type: string
+    required: true
+    description: >
+      Short lowercase identifier for the service (e.g. "iam", "system",
+      "legal"). Used to derive the schema name, role name (<service>_svc), and
+      Terraform resource names.
+  schema_name:
+    type: string
+    required: false
+    description: >
+      PostgreSQL schema name. Defaults to the service_name value.
+  database:
+    type: string
+    required: false
+    default: aegir
+    description: >
+      Target PostgreSQL database name.
+  pg_host:
+    type: string
+    required: false
+    default: postgres
+    description: >
+      PostgreSQL hostname (typically the Docker Compose service name).
+  pg_port:
+    type: number
+    required: false
+    default: 5432
+    description: >
+      PostgreSQL port.
+
+application_instructions: |
+  ## 1. Add the service role, schema, and grants to the Postgres Terraform module
+
+  In `infra/local/tf/modules/postgres/main.tf`, add a block for the new service.
+  Replace `<SVC>` with the service_name parameter (e.g. "billing"):
+
+  ```hcl
+  # ---------- <SVC> (uppercased for readability) ----------
+
+  resource "postgresql_role" "<SVC>_svc" {
+    name     = "<SVC>_svc"
+    login    = true
+    password = var.<SVC>_svc_password
+  }
+
+  resource "postgresql_schema" "<SVC>" {
+    name     = "<SVC>"          # or schema_name if provided
+    owner    = postgresql_role.<SVC>_svc.name
+    database = var.database
+  }
+
+  resource "postgresql_grant" "<SVC>_schema_usage" {
+    role        = postgresql_role.<SVC>_svc.name
+    database    = var.database
+    schema      = postgresql_schema.<SVC>.name
+    object_type = "schema"
+    privileges  = ["CREATE", "USAGE"]
+  }
+
+  resource "postgresql_default_privileges" "<SVC>_tables" {
+    role     = postgresql_role.<SVC>_svc.name
+    database = var.database
+    schema   = postgresql_schema.<SVC>.name
+    owner    = postgresql_role.<SVC>_svc.name
+
+    object_type = "table"
+    privileges  = ["SELECT", "INSERT", "UPDATE", "DELETE"]
+  }
+  ```
+
+  ## 2. Declare the password variable in the Postgres module
+
+  In `infra/local/tf/modules/postgres/variables.tf`, add:
+
+  ```hcl
+  variable "<SVC>_svc_password" {
+    description = "Password for the <SVC>_svc role"
+    type        = string
+    sensitive   = true
+  }
+  ```
+
+  ## 3. Wire the password through the root module
+
+  In `infra/local/tf/variables.tf`, add a root-level variable with a local dev
+  default:
+
+  ```hcl
+  variable "<SVC>_svc_password" {
+    default   = "<SVC>_dev"
+    sensitive = true
+  }
+  ```
+
+  In `infra/local/tf/main.tf`, pass it into the postgres module call:
+
+  ```hcl
+  module "postgres" {
+    # ... existing arguments ...
+    <SVC>_svc_password = var.<SVC>_svc_password
+  }
+  ```
+
+  ## 4. Create the migrations directory
+
+  ```
+  services/<SVC>/data/migrations/
+  ```
+
+  Place SQL migration files here using the naming convention:
+
+  ```
+  V<major>.<minor>.<patch>__<snake_case_description>.sql
+  ```
+
+  Examples (following the IAM and System service patterns):
+  - `V0.0.1__create_widget.sql`
+  - `V0.0.2__add_widget_status.sql`
+  - `V0.0.3__seed.sql`
+
+  Each file contains plain DDL/DML SQL. Tables are created in the service's
+  schema (set via the connection's `searchPath`).
+
+  ## 5. Configure the service to connect with its dedicated role
+
+  The service must set these environment variables (or equivalent config):
+
+  ```
+  PG_HOST=postgres          (or pg_host parameter)
+  PG_PORT=5432              (or pg_port parameter)
+  PG_USER=<SVC>_svc
+  PG_PASSWORD=<SVC>_dev     (local dev; injected via secrets in production)
+  PG_DATABASE=aegir         (or database parameter)
+  PG_SCHEMA=<SVC>           (or schema_name parameter)
+  ```
+
+  In the service's `app.ts` (or equivalent entry point), configure the database
+  connection with `searchPath` set to the service's schema and `migrationsDir`
+  pointing to the migrations directory:
+
+  ```typescript
+  {
+    host: getEnv('PG_HOST', 'postgres'),
+    port: Number(getEnv('PG_PORT', '5432')),
+    user: getEnv('PG_USER', '<SVC>_svc'),
+    password: getEnv('PG_PASSWORD', '<SVC>_dev'),
+    database: getEnv('PG_DATABASE', 'aegir'),
+    searchPath: [getEnv('PG_SCHEMA', '<SVC>')],
+    migrationsDir: join(__dirname, '..', 'data', 'migrations'),
+  }
+  ```
+
+  ## 6. Apply the Terraform changes
+
+  From the dev container:
+
+  ```bash
+  cd /workspace/infra/local/tf
+  tofu init
+  tofu apply
+  ```
+
+test_criteria:
+  - description: OpenTofu apply succeeds without errors
+    command: "cd /workspace/infra/local/tf && tofu apply -auto-approve"
+  - description: The service role can connect to the database
+    command: "PGPASSWORD=<SVC>_dev psql -h postgres -U <SVC>_svc -d aegir -c 'SELECT current_user;'"
+  - description: The service role can only access its own schema (cannot read from other schemas)
+    command: >
+      PGPASSWORD=<SVC>_dev psql -h postgres -U <SVC>_svc -d aegir
+      -c 'SET search_path TO iam; SELECT * FROM organization LIMIT 1;'
+      2>&1 | grep -q 'permission denied'
+  - description: Migrations run successfully on service startup
+    manual: >
+      Start the service and verify that all V*__.sql files in
+      services/<SVC>/data/migrations/ have been applied. Check the service logs
+      for migration success messages and query the schema to confirm tables
+      exist.
+
+security_notes: |
+  - **Dedicated roles per service (least privilege):** Each service connects
+    with its own PostgreSQL role (e.g. `iam_svc`, `system_svc`). Roles are
+    created with `login = true` only -- no SUPERUSER, CREATEDB, CREATEROLE, or
+    REPLICATION privileges are granted.
+  - **No shared passwords across services:** Every service role has its own
+    password, declared as a separate sensitive Terraform variable. In local dev
+    these default to `<service>_dev`; in production each must be a unique,
+    securely generated secret injected via environment or secret store.
+  - **Role-based grants (DML only, no SUPERUSER):** Default privileges are
+    limited to SELECT, INSERT, UPDATE, and DELETE on tables. Schema-level grants
+    are limited to CREATE and USAGE. No DDL-beyond-schema, no TRUNCATE, no
+    REFERENCES, and no superuser capabilities.
+  - **Schema isolation prevents cross-service data access:** Each service's
+    tables live in a dedicated PostgreSQL schema owned by its role. A role's
+    grants are scoped to its own schema only, so `iam_svc` cannot read or write
+    tables in the `system` or `legal` schemas. This enforces data boundaries at
+    the database level, not just at the application level.
+
+touchpoints:
+  - infra/local/tf/modules/postgres/main.tf
+  - infra/local/tf/modules/postgres/variables.tf
+  - infra/local/tf/main.tf
+  - infra/local/tf/variables.tf
+  - "services/<service_name>/data/migrations/"
+  - "services/<service_name>/src/app.ts"
+  - .devcontainer/docker-compose.yml

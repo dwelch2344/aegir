@@ -311,8 +311,10 @@ Track each open question using this format. Decisions should be recorded as they
 
 ### DEC-001: Manifest Format
 
-**Status:** Open
+**Status:** Decided
 **Date opened:** 2026-03-13
+**Date decided:** 2026-03-13
+**Decider:** Founder
 
 **Context:**
 The ship manifest is the agent's primary source of truth. Format affects tooling, readability, and parsing complexity. Everything downstream depends on this choice.
@@ -322,14 +324,18 @@ The ship manifest is the agent's primary source of truth. Format affects tooling
 2. **JSON** -- Zero-dependency parsing in Node.js, strict syntax, no comments. Noisy for humans.
 3. **JSON with comments (JSONC)** -- Best of both. VS Code native support. Not standard JSON.
 
-**Recommendation:** YAML. The Shipyard ecosystem already uses YAML extensively (docker-compose, Traefik config, Terraform). Comments in manifests will be valuable for documenting constraints and conventions inline. The `yaml` npm package is mature and tiny.
+**Decision:** YAML. The Shipyard ecosystem already uses YAML extensively (docker-compose, Traefik config, Terraform). Comments in manifests will be valuable for documenting constraints and conventions inline. The `yaml` npm package is mature and tiny.
+
+**Consequences:** All schemas (manifest, catalog entry) will use YAML. Zod validators will parse YAML input. The `yaml` npm package is added as a dependency.
 
 ---
 
 ### DEC-002: Catalog Storage
 
-**Status:** Open
+**Status:** Decided
 **Date opened:** 2026-03-13
+**Date decided:** 2026-03-13
+**Decider:** Founder
 
 **Context:**
 Where do catalog entries live? This affects how agents discover patterns, how versioning works, and whether the catalog can be shared across Shipyard instances.
@@ -339,14 +345,18 @@ Where do catalog entries live? This affects how agents discover patterns, how ve
 2. **Separate repo** -- Clean separation, independent versioning. Adds friction for development.
 3. **Database/API** -- Rich querying. Massive overkill for the current scale.
 
-**Recommendation:** Files in this repo. Start with `catalog/<category>/<pattern-id>/entry.yaml` plus any template files. Move to a separate repo only if/when multiple Shipyard instances need to share a catalog.
+**Decision:** Files in this repo. Start with `catalog/<pattern-id>/pattern.yaml` plus any template files. Move to a separate repo only if/when multiple Shipyard instances need to share a catalog.
+
+**Consequences:** Catalog entries are version-controlled alongside the code. CI can validate all entries. No external dependencies for catalog access.
 
 ---
 
 ### DEC-003: Drift Handling Strategy
 
-**Status:** Open
+**Status:** Decided
 **Date opened:** 2026-03-13
+**Date decided:** 2026-03-13
+**Decider:** Founder
 
 **Context:**
 Ships will inevitably diverge from their applied patterns. The question is how to detect this and what to do about it.
@@ -356,14 +366,18 @@ Ships will inevitably diverge from their applied patterns. The question is how t
 2. **Structural comparison** -- Check that expected files/directories/configs exist and contain required elements. Tolerant of additions, flags missing pieces.
 3. **Manifest-only** -- Trust the manifest. If the manifest says a pattern is applied, it is. Drift is a human problem.
 
-**Recommendation:** Structural comparison (option 2) for M3. Defer to M3 entirely -- don't build it until ships exist that could actually drift. Start with manifest-only (option 3) for M1/M2.
+**Decision:** Structural comparison (option 2) for M3. Defer to M3 entirely -- don't build it until ships exist that could actually drift. Start with manifest-only (option 3) for M1/M2.
+
+**Consequences:** No drift detection work until M3. Manifest is trusted as source of truth for M0-M2.
 
 ---
 
 ### DEC-004: Catalog Granularity
 
-**Status:** Open
+**Status:** Decided
 **Date opened:** 2026-03-13
+**Date decided:** 2026-03-13
+**Decider:** Founder
 
 **Context:**
 Should catalog entries be fine-grained (single files), feature slices (a vertical capability), or full capability bundles?
@@ -373,14 +387,18 @@ Should catalog entries be fine-grained (single files), feature slices (a vertica
 2. **Feature slices** -- One entry = one capability (e.g., "add a domain subgraph"). Matches how developers think.
 3. **Full bundles** -- One entry = entire stack layer. Inflexible.
 
-**Recommendation:** Feature slices (option 2). This matches the existing pattern audit -- each entry in the audit IS a feature slice. The 12-step recipe for adding a domain service is the archetype: it touches many files but delivers one coherent capability.
+**Decision:** Feature slices (option 2). This matches the existing pattern audit -- each entry in the audit IS a feature slice. The 12-step recipe for adding a domain service is the archetype: it touches many files but delivers one coherent capability.
+
+**Consequences:** Each catalog entry represents one coherent capability. Entries can depend on each other via `preconditions`.
 
 ---
 
 ### DEC-005: Profile Flexibility
 
-**Status:** Open
+**Status:** Decided
 **Date opened:** 2026-03-13
+**Date decided:** 2026-03-13
+**Decider:** Founder
 
 **Context:**
 When scaffolding from a profile, can individual patterns be skipped? Or is a profile all-or-nothing?
@@ -390,7 +408,9 @@ When scaffolding from a profile, can individual patterns be skipped? Or is a pro
 2. **Skip list** -- `shipyard init --profile=saas --skip=orchestration.conductor`. More flexible, but untested pattern combinations may break.
 3. **Additive** -- Start minimal, add patterns one at a time. No profiles at all.
 
-**Recommendation:** All-or-nothing for M1 (option 1). The first profile should be battle-tested as a unit. Add skip-list support in M2 once the Applicator exists to handle partial setups. Additive (option 3) becomes possible naturally once the Applicator works.
+**Decision:** All-or-nothing for M1 (option 1). The first profile should be battle-tested as a unit. Add skip-list support in M2 once the Applicator exists to handle partial setups. Additive (option 3) becomes possible naturally once the Applicator works.
+
+**Consequences:** M1 scaffolder produces one opinionated bundle. No conditional logic for pattern inclusion in v0.1.
 
 ---
 
