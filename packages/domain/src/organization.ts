@@ -3,4 +3,5 @@ export interface Organization {
   key: string
   name: string
   keycloakId?: string
+  protected: boolean
 }

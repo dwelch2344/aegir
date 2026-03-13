@@ -48,7 +48,7 @@ describe("IAM Service", () => {
       url: "/graphql",
       payload: {
         query:
-          "{ iam { identities { search(input: {}) { results { id label email } } } } }",
+          "{ iam { identities { search(input: {}) { results { id type label email } } } } }",
       },
     });
     expect(response.statusCode).toBe(200);
@@ -56,8 +56,9 @@ describe("IAM Service", () => {
     expect(results).toHaveLength(3);
     expect(results[0]).toMatchObject({
       id: 1,
-      label: "Alice Chen",
-      email: "alice@aegir.dev",
+      type: "SUPER_USER",
+      label: "System",
+      email: "system@aegir.dev",
     });
   });
 
@@ -72,7 +73,7 @@ describe("IAM Service", () => {
     });
     expect(response.statusCode).toBe(200);
     const results = response.json().data.iam.identities.search.results;
-    expect(results).toEqual([{ id: 2, label: "Bob Martinez" }]);
+    expect(results).toEqual([{ id: 2, label: "Alice Chen" }]);
   });
 
   it("filters identities by labelLike", async () => {
@@ -81,7 +82,7 @@ describe("IAM Service", () => {
       url: "/graphql",
       payload: {
         query:
-          '{ iam { identities { search(input: { labelLike: "carol" }) { results { id } } } } }',
+          '{ iam { identities { search(input: { labelLike: "bob" }) { results { id } } } } }',
       },
     });
     expect(response.statusCode).toBe(200);
@@ -96,7 +97,7 @@ describe("IAM Service", () => {
       url: "/graphql",
       payload: {
         query:
-          "{ iam { orgs { search(input: {}) { results { id key name } } } } }",
+          "{ iam { orgs { search(input: {}) { results { id key name protected } } } } }",
       },
     });
     expect(response.statusCode).toBe(200);
@@ -104,8 +105,15 @@ describe("IAM Service", () => {
     expect(results).toHaveLength(2);
     expect(results[0]).toMatchObject({
       id: 1,
+      key: "system",
+      name: "System",
+      protected: true,
+    });
+    expect(results[1]).toMatchObject({
+      id: 2,
       key: "aegir",
       name: "aegir Inc.",
+      protected: false,
     });
   });
 
@@ -115,12 +123,12 @@ describe("IAM Service", () => {
       url: "/graphql",
       payload: {
         query:
-          '{ iam { orgs { search(input: { keyLike: "acme" }) { results { id key } } } } }',
+          '{ iam { orgs { search(input: { keyLike: "aegir" }) { results { id key } } } } }',
       },
     });
     expect(response.statusCode).toBe(200);
     expect(response.json().data.iam.orgs.search.results).toEqual([
-      { id: 2, key: "acme" },
+      { id: 2, key: "aegir" },
     ]);
   });
 });

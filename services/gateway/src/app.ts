@@ -12,6 +12,7 @@ export function createApp() {
     gateway: {
       services: [
         { name: 'iam', url: config.services.iam },
+        { name: 'system', url: config.services.system },
         { name: 'agents', url: config.services.agents },
       ],
       pollingInterval: 5000,

@@ -1,11 +1,13 @@
-INSERT INTO organization (id, key, name) VALUES
-    (1, 'aegir', 'aegir Inc.'),
-    (2, 'acme',    'Acme Corp');
+-- Bootstrap organizations: System (protected) + project org
+INSERT INTO organization (id, key, name, protected) VALUES
+    (1, 'system', 'System',     true),
+    (2, 'aegir',  'aegir Inc.', false);
 
+-- Bootstrap identities: platform super-user + sample users
 INSERT INTO identity (id, type, label, email, organization_id) VALUES
-    (1, 'USER', 'Alice Chen',    'alice@aegir.dev', 1),
-    (2, 'USER', 'Bob Martinez',  'bob@aegir.dev',   1),
-    (3, 'USER', 'Carol Park',    'carol@aegir.dev',  2);
+    (1, 'SUPER_USER', 'System',        'system@aegir.dev',  1),
+    (2, 'USER',       'Alice Chen',    'alice@aegir.dev',   2),
+    (3, 'USER',       'Bob Martinez',  'bob@aegir.dev',     2);
 
 SELECT setval('organization_id_seq', (SELECT max(id) FROM organization));
 SELECT setval('identity_id_seq',     (SELECT max(id) FROM identity));

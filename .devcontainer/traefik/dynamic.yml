@@ -43,6 +43,12 @@ http:
       service: iam
       middlewares: [strip-api-iam]
 
+    api-system:
+      rule: "PathPrefix(`/api/system`)"
+      entryPoints: [web]
+      service: system
+      middlewares: [strip-api-system]
+
     api-gateway:
       rule: "PathPrefix(`/api/graphql`) || PathPrefix(`/api/graphiql`)"
       entryPoints: [web]
@@ -68,6 +74,10 @@ http:
       stripPrefix:
         prefixes: ["/api/iam"]
 
+    strip-api-system:
+      stripPrefix:
+        prefixes: ["/api/system"]
+
   services:
     app:
       loadBalancer:
@@ -83,6 +93,11 @@ http:
       loadBalancer:
         servers:
           - url: "http://aegir-dev:4001"
+
+    system:
+      loadBalancer:
+        servers:
+          - url: "http://aegir-dev:4002"
 
     mailhog:
       loadBalancer:

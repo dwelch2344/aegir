@@ -15,6 +15,12 @@ variable "legal_svc_password" {
   sensitive   = true
 }
 
+variable "system_svc_password" {
+  description = "Password for the system_svc role"
+  type        = string
+  sensitive   = true
+}
+
 variable "host" {
   description = "PostgreSQL host (used for connection string outputs)"
   type        = string

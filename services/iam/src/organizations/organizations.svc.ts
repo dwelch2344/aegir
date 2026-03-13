@@ -34,22 +34,23 @@ export default class OrganizationsService {
       key: string
       name: string
       keycloakId: string | null
-    }>(`SELECT id, key, name, keycloak_id FROM organization ${where} ORDER BY id`, params)
+      protected: boolean
+    }>(`SELECT id, key, name, keycloak_id, protected FROM organization ${where} ORDER BY id`, params)
 
     return { results }
   }
 
-  /** Upsert organizations from Keycloak. Matches on keycloak_id or key, inserts if new. */
+  /** Upsert organizations from Keycloak. Matches on keycloak_id or key, inserts if new. Skips protected orgs. */
   async sync(inputs: { keycloakId: string; key: string; name: string }[]) {
     const results: { id: number; key: string; name: string; keycloakId: string | null }[] = []
 
     for (const input of inputs) {
-      // Claim existing row by key (e.g. seeded before keycloak_id was set)
+      // Claim existing row by key (e.g. seeded before keycloak_id was set) — skip protected orgs
       const claimed = await this.db.query<{
         id: number; key: string; name: string; keycloakId: string | null
       }>(
         `UPDATE organization SET keycloak_id = :keycloakId, name = :name, updated_at = now()
-         WHERE key = :key AND (keycloak_id IS NULL OR keycloak_id LIKE 'kc-placeholder-%' OR keycloak_id = :keycloakId)
+         WHERE key = :key AND protected = false AND (keycloak_id IS NULL OR keycloak_id LIKE 'kc-placeholder-%' OR keycloak_id = :keycloakId)
          RETURNING id, key, name, keycloak_id`,
         { keycloakId: input.keycloakId, key: input.key, name: input.name },
       )

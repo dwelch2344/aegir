@@ -1,6 +1,8 @@
 export const typeDefs = `
   enum IdentityType {
     USER
+    SUPER_USER
+    SERVICE_ACCOUNT
   }
 
   type Identity @key(fields: "id") {
@@ -16,6 +18,7 @@ export const typeDefs = `
     key: String!
     name: String!
     keycloakId: String
+    protected: Boolean!
   }
 
   type IamIdentitySearch {

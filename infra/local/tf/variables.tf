@@ -31,6 +31,11 @@ variable "legal_svc_password" {
   sensitive = true
 }
 
+variable "system_svc_password" {
+  default   = "system_dev"
+  sensitive = true
+}
+
 # ---------- Keycloak ----------
 
 variable "keycloak_url" {

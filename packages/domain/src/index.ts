@@ -1,2 +1,5 @@
-export type { Identity } from './identity.js'
+export type { Identity, IdentityType } from './identity.js'
 export type { Organization } from './organization.js'
+export type { Tenant } from './tenant.js'
+export type { SystemIntegration } from './integration.js'
+export type { TenantIntegration, TenantIntegrationStatus } from './tenant-integration.js'

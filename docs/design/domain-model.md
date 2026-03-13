@@ -14,7 +14,7 @@ Any actor in the ecosystem: human user, service account, AI agent. Identities ar
 
 ### Organization
 
-The primary unit of ownership and resource grouping. Not necessarily a company — it's any logical construct that owns things (subscriptions, data, configuration). In a SaaS context, each customer entity gets an Organization. The first Organization is typically the operator itself.
+The primary unit of ownership and resource grouping. Not necessarily a company — it's any logical construct that owns things (subscriptions, data, configuration). In a SaaS context, each customer entity gets an Organization. Organizations may be marked as `protected` — protected organizations cannot be modified or deleted through normal API operations. The System organization (id=1, key=`system`) is always protected.
 
 ### Tenant
 
@@ -51,20 +51,62 @@ Tenant
 
 ## Tenant vs. Organization
 
-| | Tenant | Organization |
-|---|---|---|
-| **Represents** | The platform instance | A logical entity using the platform |
-| **Typical count** | 1 (sometimes 2–3) | Many (grows with customers) |
-| **Owns** | Integrations, infrastructure config | Subscriptions, domain resources, members |
-| **Isolation level** | Platform boundary | Resource/data boundary |
+|                     | Tenant                              | Organization                             |
+| ------------------- | ----------------------------------- | ---------------------------------------- |
+| **Represents**      | The platform instance               | A logical entity using the platform      |
+| **Typical count**   | 1 (sometimes 2–3)                   | Many (grows with customers)              |
+| **Owns**            | Integrations, infrastructure config | Subscriptions, domain resources, members |
+| **Isolation level** | Platform boundary                   | Resource/data boundary                   |
 
 ### Concrete Example
 
-For HeroDevs:
+For Maelle:
 
-- **Tenant:** "HeroDevs Universe" — the platform instance itself
-- **Organization:** "HeroDevs" — the operator's own org (first org created)
-- **Organization:** "CustomerCo" — created when a customer subscribes to a product like the EOL scanner
+- **Tenant:** "Maelleverse" — the platform instance itself
+- **Organization:** "System" — the protected platform org (id=1, always exists)
+- **Organization:** "Maelle" — the operator's own org (id=1000)
+- **Organization:** "MakeupCo" — created when a customer subscribes to Maelle's services.
+
+---
+
+## Ship Bootstrap Contract
+
+Every ship is initialized with the following seed data. This is the minimum viable state for the platform to operate.
+
+### Tenant (system service, id=1)
+
+One tenant representing the ship itself. Key matches the project name (e.g., `aegir`).
+
+### Organizations (IAM service)
+
+| id  | key         | name           | protected | Purpose                                                                                                                                       |
+| --- | ----------- | -------------- | --------- | --------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1   | `system`    | System         | `true`    | Platform-level concerns. Cannot be modified or deleted via normal APIs. Owns the SUPER_USER identity and any platform-level service accounts. |
+| 2   | `{project}` | {Project Name} | `false`   | The operator's own organization. First "real" org in the system.                                                                              |
+
+The **System organization** is special:
+
+- `protected = true` — sync and mutation operations skip it
+- Stable id (1) and key (`system`) across all ships
+- Used for platform-internal actors and configuration that should never be scoped to a customer
+
+### Identity (IAM service)
+
+| id  | type         | label  | org        | Purpose                                                                                                                         |
+| --- | ------------ | ------ | ---------- | ------------------------------------------------------------------------------------------------------------------------------- |
+| 1   | `SUPER_USER` | System | System (1) | Platform super-user. Not a human — represents the system itself for audit trails, ownership, and operations that need an actor. |
+
+### Identity Types
+
+| Type              | Description                                             |
+| ----------------- | ------------------------------------------------------- |
+| `USER`            | Human user                                              |
+| `SUPER_USER`      | Platform-level system identity with elevated privileges |
+| `SERVICE_ACCOUNT` | Machine-to-machine identity for integrations            |
+
+### Integrations (system service)
+
+Seed integrations represent the platform's own infrastructure dependencies (e.g., Keycloak, Slack, GitHub). These are linked to the tenant via TenantIntegration records.
 
 ---
 

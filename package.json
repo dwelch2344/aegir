@@ -7,11 +7,14 @@
     "dev": "turbo dev --ui=stream --log-order=stream > log.txt",
     "build": "turbo build",
     "test": "turbo test",
-    "lint": "turbo lint",
+    "lint": "biome check .",
+    "lint:fix": "biome check --write .",
+    "format": "biome format --write .",
     "local:init": "bash scripts/init.sh",
     "local:destroy": "bash scripts/destroy.sh"
   },
   "devDependencies": {
+    "@biomejs/biome": "^2.4.7",
     "turbo": "^2.0.0",
     "typescript": "^5.7.0"
   },

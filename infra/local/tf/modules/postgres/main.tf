@@ -70,3 +70,35 @@ resource "postgresql_default_privileges" "legal_tables" {
   object_type = "table"
   privileges  = ["SELECT", "INSERT", "UPDATE", "DELETE"]
 }
+
+# ---------- SYSTEM ----------
+
+resource "postgresql_role" "system_svc" {
+  name     = "system_svc"
+  login    = true
+  password = var.system_svc_password
+}
+
+resource "postgresql_schema" "system" {
+  name     = "system"
+  owner    = postgresql_role.system_svc.name
+  database = var.database
+}
+
+resource "postgresql_grant" "system_schema_usage" {
+  role        = postgresql_role.system_svc.name
+  database    = var.database
+  schema      = postgresql_schema.system.name
+  object_type = "schema"
+  privileges  = ["CREATE", "USAGE"]
+}
+
+resource "postgresql_default_privileges" "system_tables" {
+  role     = postgresql_role.system_svc.name
+  database = var.database
+  schema   = postgresql_schema.system.name
+  owner    = postgresql_role.system_svc.name
+
+  object_type = "table"
+  privileges  = ["SELECT", "INSERT", "UPDATE", "DELETE"]
+}
