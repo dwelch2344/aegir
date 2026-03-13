@@ -28,11 +28,11 @@ services:
       # OIDC auth (nuxt-oidc-auth) — provider-agnostic naming
       NUXT_OIDC_PROVIDERS_OIDC_CLIENT_ID: aegir-app
       NUXT_OIDC_PROVIDERS_OIDC_CLIENT_SECRET: "aegir-local-dev-oidc-client-secret"
-      NUXT_OIDC_PROVIDERS_OIDC_AUTHORIZATION_URL: http://localhost:8080/infra/idp/realms/global/protocol/openid-connect/auth
+      NUXT_OIDC_PROVIDERS_OIDC_AUTHORIZATION_URL: http://localhost:7356/infra/idp/realms/global/protocol/openid-connect/auth
       NUXT_OIDC_PROVIDERS_OIDC_TOKEN_URL: http://keycloak:8080/infra/idp/realms/global/protocol/openid-connect/token
       NUXT_OIDC_PROVIDERS_OIDC_USERINFO_URL: http://keycloak:8080/infra/idp/realms/global/protocol/openid-connect/userinfo
-      NUXT_OIDC_PROVIDERS_OIDC_LOGOUT_URL: http://localhost:8080/infra/idp/realms/global/protocol/openid-connect/logout
-      NUXT_OIDC_PROVIDERS_OIDC_REDIRECT_URI: http://localhost:8080/app/auth/oidc/callback
+      NUXT_OIDC_PROVIDERS_OIDC_LOGOUT_URL: http://localhost:7356/infra/idp/realms/global/protocol/openid-connect/logout
+      NUXT_OIDC_PROVIDERS_OIDC_REDIRECT_URI: http://localhost:7356/app/auth/oidc/callback
       NUXT_OIDC_PROVIDERS_OIDC_OPENID_CONFIGURATION: http://keycloak:8080/infra/idp/realms/global/.well-known/openid-configuration
       # nuxt-oidc-auth session/encryption secrets (local dev only — deterministic for reproducibility)
       # Generated via:
@@ -228,7 +228,7 @@ services:
     image: grafana/grafana:latest
     restart: unless-stopped
     environment:
-      GF_SERVER_ROOT_URL: http://localhost:8080/infra/grafana
+      GF_SERVER_ROOT_URL: http://localhost:7356/infra/grafana
       GF_SERVER_SERVE_FROM_SUB_PATH: "true"
       GF_AUTH_ANONYMOUS_ENABLED: "true"
       GF_AUTH_ANONYMOUS_ORG_ROLE: Admin

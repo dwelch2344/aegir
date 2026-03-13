@@ -28,7 +28,7 @@ export default defineNuxtConfig({
         redirectUri: process.env.NUXT_OIDC_PROVIDERS_OIDC_REDIRECT_URI || '',
         scope: ['openid', 'email', 'profile', 'organization'],
         logoutRedirectParameterName: 'post_logout_redirect_uri',
-        logoutRedirectUri: process.env.NUXT_OIDC_PROVIDERS_OIDC_LOGOUT_REDIRECT_URI || 'http://localhost:8080/app/auth/logged-out',
+        logoutRedirectUri: process.env.NUXT_OIDC_PROVIDERS_OIDC_LOGOUT_REDIRECT_URI || 'http://localhost:7356/app/auth/logged-out',
         additionalLogoutParameters: { idTokenHint: '' },
         exposeIdToken: true,
         requiredProperties: ['clientId', 'clientSecret', 'authorizationUrl', 'tokenUrl'],

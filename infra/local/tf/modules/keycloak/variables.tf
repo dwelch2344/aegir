@@ -1,3 +1,11 @@
+# ---------- Exposed ----------
+
+variable "exported_base_url" {
+  default = "http://localhost:7356"
+}
+
+# ---------- Exposed ----------
+
 variable "google_client_id" {
   description = "Google OAuth 2.0 Client ID for the Identity Provider"
   type        = string
@@ -47,11 +55,11 @@ variable "admin_api_client_secret" {
 variable "app_redirect_uri" {
   description = "Valid redirect URI for the app OIDC client"
   type        = string
-  default     = "http://localhost:8080/app/auth/oidc/callback"
+  default     = "http://localhost:7356/app/auth/oidc/callback"
 }
 
 variable "app_post_logout_redirect_uri" {
   description = "Post-logout redirect URI for the app OIDC client"
   type        = string
-  default     = "http://localhost:8080/app/*"
+  default     = "http://localhost:7356/app/*"
 }

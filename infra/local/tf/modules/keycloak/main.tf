@@ -105,12 +105,12 @@ resource "keycloak_openid_client" "admin_api" {
   standard_flow_enabled        = true
   direct_access_grants_enabled = true
   implicit_flow_enabled        = true
-  base_url                     = "http://localhost:8080/app/"
+  base_url                     = "${var.exported_base_url}/app/"
   valid_redirect_uris = [
-    "http://localhost:8080/app/api/oidc/callback"
+    "${var.exported_base_url}/app/api/oidc/callback"
   ]
   # valid_post_logout_redirect_uris = [
-  #   "http://localhost:8080/app/"
+  #   "${var.exported_base_url}/app/"
   # ]
 }
 

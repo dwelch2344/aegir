@@ -14,6 +14,7 @@
     "source=${localEnv:HOME}/.ssh,target=/home/node/.ssh,type=bind",
     "source=${localEnv:HOME}/.git,target=/home/node/.git,type=bind"
   ],
+  "forwardPorts": [7356],
   "containerEnv": {
     "POD_NAME": "local",
     "LANE": "local"
@@ -39,6 +40,7 @@
         "OpenTofu.vscode-opentofu",
         "Rubymaniac.vscode-direnv",
         "anthropic.claude-code",
+        "hashicorp.terraform",
         "Vue.volar"
       ]
     }

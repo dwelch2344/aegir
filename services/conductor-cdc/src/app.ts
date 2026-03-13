@@ -5,7 +5,7 @@ import { ensureTopics } from "./kafka.js";
 import { registerSchemas } from "./cdc-processor.js";
 import { startCdcProcessor } from "./cdc-processor.js";
 import { initSinkDb, startSinkConsumer } from "./sink.js";
-import { initaegirSinkDb, startaegirSinkConsumer } from "./aegir-sink.js";
+import { initaegirSinkDb, startaegirSinkConsumer } from "./rebuilt-sink.js";
 
 export async function buildApp() {
   const fastify = Fastify({ logger: true });

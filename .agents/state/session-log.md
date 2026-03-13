@@ -1,19 +1,8 @@
 # Session Log
 
-## 2026-03-11 — Fork Cleanup
+## 2026-03-11 — Reverse Fork
 
-### What was done
-
-Forked from a healthcare contracting prototype and stripped domain-specific code:
-
-1. **Removed**: `legal` service (contracts, Select Health workflows, workflow notes)
-2. **Removed frontend**: office/contracting pages, `useContracting` composable
-3. **Removed**: prototype-specific env vars (AGENT_INTEL, DOCUSIGN, GOOGLE_DRIVE, SH_* carrier configs)
-4. **Removed**: prototype-specific docs (overview, agent-loop, todo, notes, biz/, dev/notes)
-5. **Cleaned up**: gateway (removed legal subgraph ref), traefik (removed legal route), postgres init (removed legal_svc), dashboard cards genericized
-6. **Kept**: Conductor + orchestration + conductor-cdc + agents (restored after initial removal)
-
-### What remains
+### What was abstracted
 
 - `@aegir/common` — shared utilities
 - `@aegir/domain` — Identity, Organization types

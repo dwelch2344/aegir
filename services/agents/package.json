@@ -18,7 +18,8 @@
     "@moribashi/web": "^0.1.11",
     "@aegir/common": "workspace:*",
     "fastify": "^5.0.0",
-    "graphql": "^16.0.0"
+    "graphql": "^16.0.0",
+    "mercurius": "^16.0.0"
   },
   "devDependencies": {
     "tsup": "^8.0.0",
