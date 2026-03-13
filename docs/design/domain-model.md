@@ -110,8 +110,145 @@ Seed integrations represent the platform's own infrastructure dependencies (e.g.
 
 ---
 
-## Roles & Permissions
+## Implementation Status
 
-Roles attach to Memberships, not directly to Identities. The relationship between Roles and Permissions is intentionally not a simple association — this model is pending design and will be documented separately.
+_Last audited: 2026-03-13. See [domain-model-audit.md](domain-model-audit.md) for full details._
 
-**Status:** Open design thread. Default roles are Admin and Member; domain-specific roles are added as needed.
+### Identity
+- **Service:** IAM (`services/iam`)
+- **DB Table:** `identity`
+- **Status:** Partially Implemented
+- **Deviations:**
+  - `organization_id` is a direct FK to `organization` — design specifies this should be mediated by a Membership entity (not yet implemented)
+  - No UNIQUE constraint on `email` (only an index)
+  - No CHECK constraint on `type` enum at DB level
+  - No create/update/delete mutations — only search queries are available
+
+### Organization
+- **Service:** IAM (`services/iam`)
+- **DB Table:** `organization`
+- **Status:** Partially Implemented
+- **Deviations:**
+  - No `tenant_id` column — design says every Organization belongs to a Tenant, but this FK does not exist (cross-service boundary)
+  - `keycloak_id` column exists in implementation but is not documented in design
+  - Only `sync` mutation available (from Keycloak) — no standalone CRUD mutations
+
+### Tenant
+- **Service:** System (`services/system`)
+- **DB Table:** `tenant`
+- **Status:** Fully Implemented
+- **Deviations:**
+  - GraphQL uses `ID!` for `id` field while domain type uses `number` (minor type mismatch with IAM convention of `Int!`)
+  - No list/search query — only single-lookup by key
+  - No delete mutation
+
+### Integration
+- **Service:** System (`services/system`)
+- **DB Table:** `integration`
+- **Status:** Fully Implemented
+- **Deviations:**
+  - Domain type is named `SystemIntegration` while DB table is `integration` and design uses `Integration`
+  - `metadata` field uses `TEXT` type instead of `JSONB`
+  - No delete mutation
+
+### TenantIntegration
+- **Service:** System (`services/system`)
+- **DB Table:** `tenant_integration`
+- **Status:** Fully Implemented
+- **Deviations:**
+  - `name`, `ordinal`, and `integrationKey` fields exist in implementation but are not documented in design
+  - `metadata` field uses `TEXT` type instead of `JSONB`
+  - No CHECK constraint on `status` enum at DB level
+  - No delete mutation
+
+### Membership (Not Implemented)
+- **Service:** Would be IAM (`services/iam`)
+- **DB Table:** Does not exist
+- **Status:** Not Implemented
+- **Notes:** Documented as the mediating entity between Identity and Organization with role assignments. Currently replaced by a direct `organization_id` FK on `identity`.
+
+### Roles & Permissions / ReBAC (Not Implemented)
+- **Service:** Would be IAM (`services/iam`)
+- **DB Tables:** None exist (`org_relationship`, `role`, `role_permission`)
+- **Status:** Not Implemented
+- **Notes:** Full ReBAC model is documented in design (OrgRelationship, Role, RolePermission) but no implementation exists.
+
+---
+
+## Roles & Permissions (ReBAC)
+
+Access control is **Relationship-Based** (ReBAC). Permissions are never assigned directly to identities or even to roles in isolation — they fan out through typed relationships between organizations.
+
+### Core Concepts
+
+**OrgRelationship** — a directed edge between two organizations: an **owner org** and a **related org**, connected by a **relationship type** (a string, e.g., `SELF`, `SUBSCRIBER`, `SUBSIDIARY`). Every organization has a `SELF` relationship with itself. Relationships are **transitive** — if AcmeCorp owns a `SUBSIDIARY` relationship to AcmeCorp US, and AcmeCorp US owns a `SUBSIDIARY` relationship to AcmeCorp US East, the chain resolves.
+
+**Role** — assigned to an Identity at a specific Organization via Membership. A Role is a named bundle of **(Permission, RelationshipType)** pairs. The relationship type determines _where_ the permission applies, not just _what_ it grants.
+
+**Permission** — the actual capability (e.g., `UPDATE_ORG`, `SUBSCRIPTION_READ`). Always scoped by a relationship type.
+
+### Data Model
+
+```
+OrgRelationship(owner_org, related_org, relationship_type)
+Role(name)
+RolePermission(role, permission, relationship_type)
+Membership(identity, organization, roles[])
+```
+
+### Access Check
+
+Checking access requires three inputs:
+
+1. **Identity** — who is acting
+2. **Operating context** — the org the identity is working out of (their membership org)
+3. **Target resource owner** — the org that owns the resource being accessed
+
+Resolution:
+
+```
+1. Get Identity's Roles at Operating Context org (via Membership)
+2. For each Role, get (Permission, RelationshipType) pairs
+3. Walk OrgRelationships from Operating Context org:
+   find all orgs related by that RelationshipType (transitively)
+4. If Target Resource Owner is in that set → access granted
+```
+
+### Why the System Org Matters for ReBAC
+
+System-wide permissions (e.g., "platform admins can do X everywhere") resolve through the same mechanism. The System org (id=1) is the **default org for the tenant** — if a role needs to grant a permission "system-wide," the resolution is: find orgs that have a relationship with the System org. No special-casing needed.
+
+### Examples
+
+**Dave — Admin at AcmeCorp:**
+
+```
+Dave → Membership(AcmeCorp) → Role(Admin)
+Admin grants: (UPDATE_ORG, SELF)
+AcmeCorp —SELF→ AcmeCorp
+∴ Dave has UPDATE_ORG at AcmeCorp ✓
+```
+
+Access check: Identity=Dave, Operating Context=AcmeCorp, Target=AcmeCorp → granted.
+
+**Jim — CSR at AcmeCorp:**
+
+```
+Jim → Membership(AcmeCorp) → Role(CSR)
+CSR grants: (SUBSCRIPTION_READ, SUBSCRIBER)
+WidgetCo —SUBSCRIBER→ AcmeCorp
+GadgetInc —SUBSCRIBER→ AcmeCorp
+∴ Jim has SUBSCRIPTION_READ at WidgetCo, GadgetInc ✓
+```
+
+Access check: Identity=Jim, Operating Context=AcmeCorp, Target=WidgetCo → granted.
+
+**Transitive example — subsidiary:**
+
+```
+AcmeCorp US —SUBSIDIARY→ AcmeCorp
+AcmeCorp US East —SUBSIDIARY→ AcmeCorp US
+
+Admin grants: (VIEW_FINANCIALS, SUBSIDIARY)
+∴ AcmeCorp Admin has VIEW_FINANCIALS at AcmeCorp US and AcmeCorp US East
+```
