@@ -7,34 +7,87 @@ import { join } from 'node:path'
 import type { TaskResult } from '../conductor.js'
 import { config } from '../config.js'
 
-interface StreamCallbacks {
-  onChunk: (accumulated: string) => void
+interface StreamEvent {
+  type: string
+  subtype?: string
+  message?: {
+    content?: Array<{ type: string; text?: string }>
+  }
+  result?: string
 }
 
+interface StreamCallbacks {
+  /** Called with accumulated assistant text whenever new content arrives */
+  onText: (accumulated: string) => void
+  /** Called when Claude uses a tool (file read, edit, etc.) */
+  onToolUse: (toolName: string) => void
+}
+
+/**
+ * Run Claude CLI with stream-json output for real-time streaming.
+ * Parses newline-delimited JSON events and extracts text content.
+ */
 function runClaude(
   promptFile: string,
   env: NodeJS.ProcessEnv,
-  callbacks?: StreamCallbacks,
+  callbacks: StreamCallbacks,
   cwd?: string,
 ): Promise<string> {
   return new Promise((resolve, reject) => {
-    const child = spawn('claude', ['-p', '--output-format', 'text', '--dangerously-skip-permissions'], {
-      env,
-      cwd: cwd || undefined,
-      stdio: ['pipe', 'pipe', 'pipe'],
-    })
+    const child = spawn(
+      'claude',
+      ['-p', '--output-format', 'stream-json', '--verbose', '--dangerously-skip-permissions'],
+      {
+        env,
+        cwd: cwd || undefined,
+        stdio: ['pipe', 'pipe', 'pipe'],
+      },
+    )
 
-    let stdout = ''
     let stderr = ''
+    let lineBuf = ''
+    let finalResult = ''
+    let accumulatedText = ''
 
     child.stdout.on('data', (chunk: Buffer) => {
-      stdout += chunk.toString()
-      callbacks?.onChunk(stdout)
+      lineBuf += chunk.toString()
+
+      // Process complete lines (newline-delimited JSON)
+      for (let newlineIdx = lineBuf.indexOf('\n'); newlineIdx !== -1; newlineIdx = lineBuf.indexOf('\n')) {
+        const line = lineBuf.slice(0, newlineIdx).trim()
+        lineBuf = lineBuf.slice(newlineIdx + 1)
+        if (!line) continue
+
+        try {
+          const event: StreamEvent = JSON.parse(line)
+
+          if (event.type === 'assistant' && event.message?.content) {
+            // Extract text blocks from the assistant message
+            for (const block of event.message.content) {
+              if (block.type === 'text' && block.text) {
+                accumulatedText += block.text
+                callbacks.onText(accumulatedText)
+              }
+              if (block.type === 'tool_use') {
+                callbacks.onToolUse((block as any).name || 'unknown')
+              }
+            }
+          }
+
+          if (event.type === 'result' && event.result) {
+            finalResult = event.result
+          }
+        } catch {
+          // Ignore malformed lines
+        }
+      }
     })
+
     child.stderr.on('data', (chunk: Buffer) => {
       stderr += chunk.toString()
     })
 
+    // Pipe prompt from file to stdin
     const input = createReadStream(promptFile)
     input.pipe(child.stdin)
 
@@ -45,7 +98,9 @@ function runClaude(
 
     child.on('close', (code) => {
       clearTimeout(timer)
-      if (code === 0) resolve(stdout)
+      // Prefer the result event's text, fall back to accumulated text
+      const response = finalResult || accumulatedText
+      if (code === 0) resolve(response)
       else reject(new Error(stderr || `Claude CLI exited with code ${code}`))
     })
     child.on('error', (err) => {
@@ -121,38 +176,37 @@ export async function handleAgentInvokeClaude(task: any): Promise<TaskResult> {
     // Throttle streaming updates — at most every 2s
     let lastStreamAt = 0
     const STREAM_INTERVAL = 2000
-    let streamedOnce = false
 
-    const stdout = await runClaude(
+    const response = await runClaude(
       promptFile,
       env,
       {
-        onChunk(accumulated) {
+        onText(accumulated) {
           const now = Date.now()
           if (now - lastStreamAt < STREAM_INTERVAL) return
           lastStreamAt = now
-          streamedOnce = true
 
-          // Push to Conductor logs
           addTaskLog(task.taskId, `[streaming] ${accumulated.length} chars so far`)
 
-          // Push partial response to the chat UI
           if (conversationId) {
             streamToChat(conversationId, accumulated)
           }
+        },
+        onToolUse(toolName) {
+          addTaskLog(task.taskId, `[tool] ${toolName}`)
         },
       },
       localPath || undefined,
     )
 
-    const response = stdout.trim()
+    const trimmed = response.trim()
 
     return {
       workflowInstanceId: task.workflowInstanceId,
       taskId: task.taskId,
       status: 'COMPLETED',
-      outputData: { response, streamed: streamedOnce },
-      logs: [{ log: `Claude responded (${response.length} chars)`, createdTime: Date.now() }],
+      outputData: { response: trimmed },
+      logs: [{ log: `Claude responded (${trimmed.length} chars)`, createdTime: Date.now() }],
     }
   } catch (err: any) {
     const message = err?.stderr || err?.message || 'Claude CLI invocation failed'

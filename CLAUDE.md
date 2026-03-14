@@ -11,6 +11,7 @@ Read this before making any changes.
 - Otherwise, use `.agents/state` to track history in whatever files make sense so our experience together is consistent and relevant.
 - Follow the GraphQL naming conventions and other practices from the Moribashi framework. Document conventions adopted there + in general in the state folder as needed.
 - Before you scan and figure out what to do, consult easy wins in the `docs/design/` folder.
+- Whenever we update patterns/blueprints/etc, make sure to track that in the "thing" itself so versioning is captured. Basically, enable the applicator to always get from A->B (or G, if it's been a while)
 
 ---
 
