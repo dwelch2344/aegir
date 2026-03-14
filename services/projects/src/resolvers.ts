@@ -67,6 +67,48 @@ export const resolvers: ResolverMap<RequestCradle> = {
     ) {
       return this.projectsService.create(args.input)
     },
+    async scaffold(
+      this: RequestCradle,
+      _: unknown,
+      args: {
+        input: {
+          organizationId: number
+          name: string
+          owner: string
+          projectType: string
+          description?: string
+          visibility?: string
+        }
+      },
+    ) {
+      const { organizationId, name, owner, projectType, description, visibility } = args.input
+      const repoUrl = `git@github.com:${owner}/${name}.git`
+
+      // Create the project record first (PENDING status)
+      const project = await this.projectsService.create({
+        organizationId,
+        name,
+        repoUrl,
+        branch: 'main',
+      })
+
+      // Trigger the scaffold workflow
+      const orchestrationUrl = process.env.ORCHESTRATION_URL || 'http://localhost:4010'
+      const res = await fetch(`${orchestrationUrl}/projects/scaffold`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          projectId: project.id,
+          name,
+          owner,
+          projectType,
+          description: description ?? '',
+          visibility: visibility ?? 'private',
+        }),
+      })
+      const data = (await res.json()) as { workflowId: string }
+      return { projectId: project.id, workflowId: data.workflowId }
+    },
     async update(this: RequestCradle, _: unknown, args: { id: string; input: Record<string, unknown> }) {
       return this.projectsService.update(args.id, args.input)
     },

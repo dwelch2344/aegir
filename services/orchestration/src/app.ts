@@ -11,6 +11,8 @@ import {
   projectCheckStatusWorkflow,
   projectDiagnosticsTaskDefs,
   projectDiagnosticsWorkflow,
+  projectScaffoldTaskDefs,
+  projectScaffoldWorkflow,
   projectSyncTaskDefs,
   projectSyncWorkflow,
   selectHealthAcaWorkflow,
@@ -165,6 +167,30 @@ export async function buildApp() {
     return { ok: true }
   })
 
+  // Project scaffold — create a new repo, clone, init manifest, store metadata
+  fastify.post<{
+    Body: {
+      projectId: string
+      name: string
+      owner: string
+      projectType: string
+      description?: string
+      visibility?: string
+    }
+  }>('/projects/scaffold', async (req) => {
+    const { projectId, name, owner, projectType, description, visibility } = req.body
+
+    const workflowId = await startWorkflow('project_scaffold', {
+      projectId,
+      name,
+      owner,
+      projectType,
+      description: description ?? '',
+      visibility: visibility ?? 'private',
+    })
+    return { workflowId }
+  })
+
   // Project check-status — run shipyard status on a synced project
   fastify.post<{ Body: { projectId: string } }>('/projects/check-status', async (req) => {
     const { projectId } = req.body
@@ -275,6 +301,7 @@ async function registerWithRetry(maxAttempts = 20, delayMs = 3000) {
         ...projectCheckStatusTaskDefs,
         ...projectApplyPatternTaskDefs,
         ...projectDiagnosticsTaskDefs,
+        ...projectScaffoldTaskDefs,
       ]
       await registerTaskDefs(allTaskDefs)
       console.log(`[orchestration] registered ${allTaskDefs.length} task definitions`)
@@ -287,6 +314,7 @@ async function registerWithRetry(maxAttempts = 20, delayMs = 3000) {
         projectCheckStatusWorkflow,
         projectApplyPatternWorkflow,
         projectDiagnosticsWorkflow,
+        projectScaffoldWorkflow,
       ]
       for (const wf of allWorkflows) {
         await registerWorkflow(wf)

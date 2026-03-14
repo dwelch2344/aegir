@@ -132,6 +132,15 @@ export const typeDefs = `
     branch: String
   }
 
+  input ProjectsProjectScaffoldInput {
+    organizationId: Int!
+    name: String!
+    owner: String!
+    projectType: String!
+    description: String
+    visibility: String
+  }
+
   input ProjectsProjectUpdateInput {
     name: String
     branch: String
@@ -168,6 +177,7 @@ export const typeDefs = `
 
   type ProjectsProjectsOps {
     create(input: ProjectsProjectCreateInput!): ProjectsProject!
+    scaffold(input: ProjectsProjectScaffoldInput!): ProjectsSyncResult!
     update(id: ID!, input: ProjectsProjectUpdateInput!): ProjectsProject
     delete(id: ID!): Boolean!
     sync(id: ID!): ProjectsSyncResult!
