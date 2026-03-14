@@ -111,6 +111,20 @@ export function useProjects() {
     projects.value = projects.value.filter((p) => p.id !== id)
   }
 
+  async function checkStatus(id: string) {
+    const data = await gql<any>(gatewayUrl, CHECK_STATUS_MUTATION, { id })
+    return data.projects.projects.checkStatus
+  }
+
+  async function applyPattern(id: string, patternId: string, params?: Record<string, unknown>) {
+    const data = await gql<any>(gatewayUrl, APPLY_PATTERN_MUTATION, {
+      id,
+      patternId,
+      params: params ? JSON.stringify(params) : null,
+    })
+    return data.projects.projects.applyPattern
+  }
+
   return {
     projects,
     loading,
@@ -119,6 +133,8 @@ export function useProjects() {
     addProject,
     syncProject,
     deleteProject,
+    checkStatus,
+    applyPattern,
   }
 }
 
@@ -155,5 +171,17 @@ const SYNC_MUTATION = `
 const DELETE_MUTATION = `
   mutation($id: ID!) {
     projects { projects { delete(id: $id) } }
+  }
+`
+
+const CHECK_STATUS_MUTATION = `
+  mutation($id: ID!) {
+    projects { projects { checkStatus(id: $id) { projectId workflowId } } }
+  }
+`
+
+const APPLY_PATTERN_MUTATION = `
+  mutation($id: ID!, $patternId: String!, $params: String) {
+    projects { projects { applyPattern(id: $id, patternId: $patternId, params: $params) { projectId workflowId } } }
   }
 `

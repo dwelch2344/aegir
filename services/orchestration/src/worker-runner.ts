@@ -11,7 +11,10 @@ import { handleShFinalizeContract } from './workers/sh-finalize-contract.js'
 import { handleShHfCountersignAndTraining } from './workers/sh-hf-countersign-and-training.js'
 import { handleShRequestContract } from './workers/sh-request-contract.js'
 import { handleShValidateAgentInfo } from './workers/sh-validate-agent-info.js'
+import { handleProjectApplyPattern } from './workers/project-apply-pattern.js'
+import { handleProjectCheckStatus } from './workers/project-check-status.js'
 import { handleProjectClone } from './workers/project-clone.js'
+import { handleProjectCommitPush } from './workers/project-commit-push.js'
 import { handleProjectParseManifest } from './workers/project-parse-manifest.js'
 import { handleProjectStoreMetadata } from './workers/project-store-metadata.js'
 import { handleValidateIdentity } from './workers/validate-identity.js'
@@ -37,6 +40,9 @@ const handlers: Record<string, TaskHandler> = {
   project_clone: handleProjectClone,
   project_parse_manifest: handleProjectParseManifest,
   project_store_metadata: handleProjectStoreMetadata,
+  project_check_status: handleProjectCheckStatus,
+  project_apply_pattern: handleProjectApplyPattern,
+  project_commit_push: handleProjectCommitPush,
 }
 
 const WORKER_ID = `orchestration-${process.pid}`

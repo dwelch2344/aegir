@@ -83,11 +83,36 @@ export const typeDefs = `
     lastSyncedAt: String
   }
 
+  input ProjectsServiceInput {
+    name: String!
+    type: String!
+    port: Int!
+  }
+
+  input ProjectsPatternInput {
+    patternId: String!
+    version: String!
+    appliedAt: String
+  }
+
+  input ProjectsStatusReportInput {
+    projectId: ID!
+    issues: [String!]!
+    servicesOk: Int!
+    servicesMissing: Int!
+    outdatedPatterns: Int!
+  }
+
   type ProjectsProjectsOps {
     create(input: ProjectsProjectCreateInput!): ProjectsProject!
     update(id: ID!, input: ProjectsProjectUpdateInput!): ProjectsProject
     delete(id: ID!): Boolean!
     sync(id: ID!): ProjectsSyncResult!
+    replaceServices(projectId: ID!, services: [ProjectsServiceInput!]!): Boolean!
+    replacePatterns(projectId: ID!, patterns: [ProjectsPatternInput!]!): Boolean!
+    saveStatusReport(input: ProjectsStatusReportInput!): ProjectsStatusReport!
+    checkStatus(id: ID!): ProjectsSyncResult!
+    applyPattern(id: ID!, patternId: String!, params: String): ProjectsSyncResult!
   }
 
   type ProjectsSyncResult {

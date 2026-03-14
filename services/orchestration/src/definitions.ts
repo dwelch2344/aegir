@@ -280,6 +280,128 @@ export const agentChatWorkflow: WorkflowDef = {
 
 const projectsOwner = 'projects@aegir.local'
 
+export const projectCheckStatusTaskDefs: TaskDef[] = [
+  {
+    name: 'project_check_status',
+    description: 'Runs shipyard status on a cloned project and saves the report',
+    retryCount: 1,
+    retryLogic: 'FIXED',
+    retryDelaySeconds: 3,
+    timeoutSeconds: 30,
+    responseTimeoutSeconds: 30,
+    timeoutPolicy: 'TIME_OUT_WF',
+    ownerEmail: projectsOwner,
+  },
+]
+
+export const projectApplyPatternTaskDefs: TaskDef[] = [
+  {
+    name: 'project_apply_pattern',
+    description: 'Applies a shipyard catalog pattern to the cloned project',
+    retryCount: 0,
+    retryLogic: 'FIXED',
+    retryDelaySeconds: 5,
+    timeoutSeconds: 60,
+    responseTimeoutSeconds: 60,
+    timeoutPolicy: 'TIME_OUT_WF',
+    ownerEmail: projectsOwner,
+  },
+  {
+    name: 'project_commit_push',
+    description: 'Commits and pushes changes back to the project repository',
+    retryCount: 1,
+    retryLogic: 'FIXED',
+    retryDelaySeconds: 5,
+    timeoutSeconds: 30,
+    responseTimeoutSeconds: 30,
+    timeoutPolicy: 'TIME_OUT_WF',
+    ownerEmail: projectsOwner,
+  },
+]
+
+export const projectCheckStatusWorkflow: WorkflowDef = {
+  name: 'project_check_status',
+  description: 'Run shipyard status on a synced project and save the report',
+  version: 1,
+  schemaVersion: 2,
+  ownerEmail: projectsOwner,
+  tasks: [
+    {
+      name: 'project_check_status',
+      taskReferenceName: 'project_check_status_ref',
+      type: 'SIMPLE',
+      inputParameters: {
+        projectId: '${workflow.input.projectId}',
+        localPath: '${workflow.input.localPath}',
+      },
+    },
+  ],
+  outputParameters: {
+    issues: '${project_check_status_ref.output.issues}',
+    servicesOk: '${project_check_status_ref.output.servicesOk}',
+    servicesMissing: '${project_check_status_ref.output.servicesMissing}',
+    outdatedPatterns: '${project_check_status_ref.output.outdatedPatterns}',
+  },
+}
+
+export const projectApplyPatternWorkflow: WorkflowDef = {
+  name: 'project_apply_pattern',
+  description: 'Apply a catalog pattern to a project, then commit and push changes',
+  version: 1,
+  schemaVersion: 2,
+  ownerEmail: projectsOwner,
+  tasks: [
+    {
+      name: 'project_apply_pattern',
+      taskReferenceName: 'project_apply_pattern_ref',
+      type: 'SIMPLE',
+      inputParameters: {
+        projectId: '${workflow.input.projectId}',
+        localPath: '${workflow.input.localPath}',
+        patternId: '${workflow.input.patternId}',
+        params: '${workflow.input.params}',
+      },
+    },
+    {
+      name: 'project_commit_push',
+      taskReferenceName: 'project_commit_push_ref',
+      type: 'SIMPLE',
+      inputParameters: {
+        projectId: '${workflow.input.projectId}',
+        localPath: '${project_apply_pattern_ref.output.localPath}',
+        patternId: '${workflow.input.patternId}',
+      },
+    },
+    {
+      name: 'project_parse_manifest',
+      taskReferenceName: 'project_reparse_manifest_ref',
+      type: 'SIMPLE',
+      inputParameters: {
+        localPath: '${project_apply_pattern_ref.output.localPath}',
+      },
+    },
+    {
+      name: 'project_store_metadata',
+      taskReferenceName: 'project_restore_metadata_ref',
+      type: 'SIMPLE',
+      inputParameters: {
+        projectId: '${workflow.input.projectId}',
+        localPath: '${project_apply_pattern_ref.output.localPath}',
+        manifestRaw: '${project_reparse_manifest_ref.output.manifestRaw}',
+        services: '${project_reparse_manifest_ref.output.services}',
+        patterns: '${project_reparse_manifest_ref.output.patterns}',
+      },
+    },
+  ],
+  outputParameters: {
+    applied: '${project_apply_pattern_ref.output.patternId}',
+    committed: '${project_commit_push_ref.output.committed}',
+    pushed: '${project_commit_push_ref.output.pushed}',
+    branchName: '${project_commit_push_ref.output.branchName}',
+    prUrl: '${project_commit_push_ref.output.prUrl}',
+  },
+}
+
 export const projectSyncTaskDefs: TaskDef[] = [
   {
     name: 'project_clone',

@@ -46,6 +46,7 @@ export const config = {
     graphqlUrl: getEnv('PROJECTS_GRAPHQL_URL', 'http://localhost:4004/graphql')!,
     workspaceDir: getEnv('PROJECTS_WORKSPACE_DIR', '/tmp/shipyard-projects')!,
     catalogDir: getEnv('SHIPYARD_CATALOG_DIR', '/workspace/catalog')!,
+    shipyardBin: getEnv('SHIPYARD_BIN', '/workspace/packages/shipyard/dist/cli.js')!,
   },
 
   selectHealth: {

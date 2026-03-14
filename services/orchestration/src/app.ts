@@ -5,12 +5,17 @@ import {
   agentChatTaskDefs,
   agentChatWorkflow,
   onboardingWorkflow,
+  projectApplyPatternTaskDefs,
+  projectApplyPatternWorkflow,
+  projectCheckStatusTaskDefs,
+  projectCheckStatusWorkflow,
   projectSyncTaskDefs,
   projectSyncWorkflow,
   selectHealthAcaWorkflow,
   selectHealthTaskDefs,
   taskDefs,
 } from './definitions.js'
+import { config } from './config.js'
 import { startWorkers } from './worker-runner.js'
 
 export async function buildApp() {
@@ -73,41 +78,38 @@ export async function buildApp() {
   })
 
   // Project sync — clone repo, parse manifest, store metadata
-  fastify.post<{ Body: { projectId: string; repoUrl?: string; branch?: string } }>(
-    '/projects/sync',
-    async (req) => {
-      const { projectId, repoUrl, branch } = req.body
+  fastify.post<{ Body: { projectId: string; repoUrl?: string; branch?: string } }>('/projects/sync', async (req) => {
+    const { projectId, repoUrl, branch } = req.body
 
-      // If repoUrl not provided, fetch it from the projects service
-      let url = repoUrl
-      let br = branch
-      if (!url) {
-        const gqlUrl = process.env.PROJECTS_GRAPHQL_URL || 'http://localhost:4004/graphql'
-        const res = await fetch(gqlUrl, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            query: `query($input: ProjectsProjectSearchInput!) {
+    // If repoUrl not provided, fetch it from the projects service
+    let url = repoUrl
+    let br = branch
+    if (!url) {
+      const gqlUrl = process.env.PROJECTS_GRAPHQL_URL || 'http://localhost:4004/graphql'
+      const res = await fetch(gqlUrl, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          query: `query($input: ProjectsProjectSearchInput!) {
               projects { projects { search(input: $input) { results { repoUrl branch } } } }
             }`,
-            variables: { input: { idIn: [projectId] } },
-          }),
-        })
-        const json = (await res.json()) as any
-        const project = json.data?.projects?.projects?.search?.results?.[0]
-        if (!project) throw new Error(`Project ${projectId} not found`)
-        url = project.repoUrl
-        br = project.branch
-      }
-
-      const workflowId = await startWorkflow('project_sync', {
-        projectId,
-        repoUrl: url,
-        branch: br ?? 'main',
+          variables: { input: { idIn: [projectId] } },
+        }),
       })
-      return { workflowId }
-    },
-  )
+      const json = (await res.json()) as any
+      const project = json.data?.projects?.projects?.search?.results?.[0]
+      if (!project) throw new Error(`Project ${projectId} not found`)
+      url = project.repoUrl
+      br = project.branch
+    }
+
+    const workflowId = await startWorkflow('project_sync', {
+      projectId,
+      repoUrl: url,
+      branch: br ?? 'main',
+    })
+    return { workflowId }
+  })
 
   // Agent chat — start a persistent conversation workflow
   fastify.post<{ Body: { conversationId: string } }>('/agents/chat/start', async (req) => {
@@ -137,6 +139,62 @@ export async function buildApp() {
     return { ok: true }
   })
 
+  // Project check-status — run shipyard status on a synced project
+  fastify.post<{ Body: { projectId: string } }>('/projects/check-status', async (req) => {
+    const { projectId } = req.body
+
+    // Look up localPath from projects service
+    const gqlUrl = config.projects.graphqlUrl
+    const res = await fetch(gqlUrl, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        query: `query($input: ProjectsProjectSearchInput!) {
+          projects { projects { search(input: $input) { results { localPath } } } }
+        }`,
+        variables: { input: { idIn: [projectId] } },
+      }),
+    })
+    const json = (await res.json()) as any
+    const localPath = json.data?.projects?.projects?.search?.results?.[0]?.localPath
+    if (!localPath) throw new Error(`Project ${projectId} has no localPath — sync first`)
+
+    const workflowId = await startWorkflow('project_check_status', { projectId, localPath })
+    return { workflowId }
+  })
+
+  // Project apply-pattern — apply a catalog pattern and push changes
+  fastify.post<{ Body: { projectId: string; patternId: string; params?: Record<string, unknown> } }>(
+    '/projects/apply-pattern',
+    async (req) => {
+      const { projectId, patternId, params } = req.body
+
+      // Look up localPath
+      const gqlUrl = config.projects.graphqlUrl
+      const res = await fetch(gqlUrl, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          query: `query($input: ProjectsProjectSearchInput!) {
+            projects { projects { search(input: $input) { results { localPath } } } }
+          }`,
+          variables: { input: { idIn: [projectId] } },
+        }),
+      })
+      const json = (await res.json()) as any
+      const localPath = json.data?.projects?.projects?.search?.results?.[0]?.localPath
+      if (!localPath) throw new Error(`Project ${projectId} has no localPath — sync first`)
+
+      const workflowId = await startWorkflow('project_apply_pattern', {
+        projectId,
+        localPath,
+        patternId,
+        params: params ?? {},
+      })
+      return { workflowId }
+    },
+  )
+
   fastify.addHook('onClose', () => ac.abort())
 
   return {
@@ -159,21 +217,29 @@ export async function buildApp() {
 async function registerWithRetry(maxAttempts = 20, delayMs = 3000) {
   for (let attempt = 1; attempt <= maxAttempts; attempt++) {
     try {
-      const allTaskDefs = [...taskDefs, ...selectHealthTaskDefs, ...agentChatTaskDefs, ...projectSyncTaskDefs]
+      const allTaskDefs = [
+        ...taskDefs,
+        ...selectHealthTaskDefs,
+        ...agentChatTaskDefs,
+        ...projectSyncTaskDefs,
+        ...projectCheckStatusTaskDefs,
+        ...projectApplyPatternTaskDefs,
+      ]
       await registerTaskDefs(allTaskDefs)
       console.log(`[orchestration] registered ${allTaskDefs.length} task definitions`)
 
-      await registerWorkflow(onboardingWorkflow)
-      console.log(`[orchestration] registered workflow "${onboardingWorkflow.name}"`)
-
-      await registerWorkflow(selectHealthAcaWorkflow)
-      console.log(`[orchestration] registered workflow "${selectHealthAcaWorkflow.name}"`)
-
-      await registerWorkflow(agentChatWorkflow)
-      console.log(`[orchestration] registered workflow "${agentChatWorkflow.name}"`)
-
-      await registerWorkflow(projectSyncWorkflow)
-      console.log(`[orchestration] registered workflow "${projectSyncWorkflow.name}"`)
+      const allWorkflows = [
+        onboardingWorkflow,
+        selectHealthAcaWorkflow,
+        agentChatWorkflow,
+        projectSyncWorkflow,
+        projectCheckStatusWorkflow,
+        projectApplyPatternWorkflow,
+      ]
+      for (const wf of allWorkflows) {
+        await registerWorkflow(wf)
+        console.log(`[orchestration] registered workflow "${wf.name}"`)
+      }
       return
     } catch (err: any) {
       console.warn(`[orchestration] attempt ${attempt}/${maxAttempts} - conductor not ready: ${err.message}`)

@@ -1,7 +1,8 @@
--- Add organization_id to conversation, defaulting existing rows to org 2 (acme)
-ALTER TABLE conversation ADD COLUMN organization_id INTEGER NOT NULL DEFAULT 2;
+DO $$ BEGIN
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'conversation' AND column_name = 'organization_id') THEN
+    ALTER TABLE conversation ADD COLUMN organization_id INTEGER NOT NULL DEFAULT 2;
+    ALTER TABLE conversation ALTER COLUMN organization_id DROP DEFAULT;
+  END IF;
+END $$;
 
--- Remove the default after backfill so future inserts must specify org
-ALTER TABLE conversation ALTER COLUMN organization_id DROP DEFAULT;
-
-CREATE INDEX idx_conversation_organization_id ON conversation (organization_id);
+CREATE INDEX IF NOT EXISTS idx_conversation_organization_id ON conversation (organization_id);

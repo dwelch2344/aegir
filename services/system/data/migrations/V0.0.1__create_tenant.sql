@@ -1,4 +1,4 @@
-CREATE TABLE tenant (
+CREATE TABLE IF NOT EXISTS tenant (
     id         SERIAL       PRIMARY KEY,
     key        VARCHAR(100) NOT NULL UNIQUE,
     name       VARCHAR(255) NOT NULL,

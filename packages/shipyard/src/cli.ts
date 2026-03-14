@@ -63,6 +63,7 @@ function main() {
       output: { type: 'string' },
       'org-scope': { type: 'string' },
       ship: { type: 'string' },
+      json: { type: 'boolean', default: false },
       name: { type: 'string' },
       port: { type: 'string' },
       entity: { type: 'string' },
@@ -245,6 +246,31 @@ function handleStatus(values: Record<string, string | boolean | undefined>, _roo
 
   try {
     const result = status(resolve(shipDir), existsSync(catalogDir) ? catalogDir : undefined)
+
+    // JSON output for programmatic use
+    if (values.json) {
+      const output = {
+        name: result.manifest.name,
+        type: result.manifest.type,
+        services: result.services.map((s) => ({
+          name: s.name,
+          port: s.port,
+          type: s.type,
+          status: s.exists && s.hasSource ? 'ok' : 'MISSING',
+          hasTests: s.hasTests,
+        })),
+        patterns: result.patterns.map((p) => ({
+          id: p.id,
+          version: p.version,
+          catalogVersion: p.catalogVersion,
+          status: p.outdated ? 'outdated' : 'current',
+        })),
+        issues: result.issues,
+      }
+      console.log(JSON.stringify(output))
+      return
+    }
+
     const m = result.manifest
 
     console.log(`\n${m.name} (${m.type})`)

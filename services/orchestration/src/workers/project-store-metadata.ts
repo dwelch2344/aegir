@@ -27,6 +27,34 @@ export async function handleProjectStoreMetadata(task: any): Promise<TaskResult>
       }),
     })
 
+    // Persist services
+    if (services?.length) {
+      await fetch(gqlUrl, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          query: `mutation($projectId: ID!, $services: [ProjectsServiceInput!]!) {
+            projects { projects { replaceServices(projectId: $projectId, services: $services) } }
+          }`,
+          variables: { projectId, services },
+        }),
+      })
+    }
+
+    // Persist patterns
+    if (patterns?.length) {
+      await fetch(gqlUrl, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          query: `mutation($projectId: ID!, $patterns: [ProjectsPatternInput!]!) {
+            projects { projects { replacePatterns(projectId: $projectId, patterns: $patterns) } }
+          }`,
+          variables: { projectId, patterns },
+        }),
+      })
+    }
+
     return {
       workflowInstanceId: task.workflowInstanceId,
       taskId: task.taskId,
@@ -35,7 +63,12 @@ export async function handleProjectStoreMetadata(task: any): Promise<TaskResult>
         servicesStored: services?.length ?? 0,
         patternsStored: patterns?.length ?? 0,
       },
-      logs: [{ log: `Stored metadata for project ${projectId}`, createdTime: Date.now() }],
+      logs: [
+        {
+          log: `Stored metadata for project ${projectId}: ${services?.length ?? 0} services, ${patterns?.length ?? 0} patterns`,
+          createdTime: Date.now(),
+        },
+      ],
     }
   } catch (err: any) {
     return {
