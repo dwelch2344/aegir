@@ -525,6 +525,103 @@ export const projectSyncWorkflow: WorkflowDef = {
   },
 }
 
+// --- Project scaffold workflow ---
+
+export const projectScaffoldTaskDefs: TaskDef[] = [
+  {
+    name: 'project_create_repo',
+    description: 'Creates a new GitHub repository for the project',
+    retryCount: 0,
+    retryLogic: 'FIXED',
+    retryDelaySeconds: 5,
+    timeoutSeconds: 60,
+    responseTimeoutSeconds: 60,
+    timeoutPolicy: 'TIME_OUT_WF',
+    ownerEmail: projectsOwner,
+  },
+  {
+    name: 'project_init_manifest',
+    description: 'Initializes the ship manifest and baseline files in the new repo',
+    retryCount: 0,
+    retryLogic: 'FIXED',
+    retryDelaySeconds: 5,
+    timeoutSeconds: 60,
+    responseTimeoutSeconds: 60,
+    timeoutPolicy: 'TIME_OUT_WF',
+    ownerEmail: projectsOwner,
+  },
+]
+
+export const projectScaffoldWorkflow: WorkflowDef = {
+  name: 'project_scaffold',
+  description: 'Create a new GitHub repo, clone it, initialize the ship manifest, and store metadata',
+  version: 1,
+  schemaVersion: 2,
+  ownerEmail: projectsOwner,
+  tasks: [
+    {
+      name: 'project_create_repo',
+      taskReferenceName: 'project_create_repo_ref',
+      type: 'SIMPLE',
+      inputParameters: {
+        projectId: '${workflow.input.projectId}',
+        name: '${workflow.input.name}',
+        owner: '${workflow.input.owner}',
+        description: '${workflow.input.description}',
+        visibility: '${workflow.input.visibility}',
+      },
+    },
+    {
+      name: 'project_clone',
+      taskReferenceName: 'project_scaffold_clone_ref',
+      type: 'SIMPLE',
+      inputParameters: {
+        projectId: '${workflow.input.projectId}',
+        repoUrl: '${project_create_repo_ref.output.repoUrl}',
+        branch: 'main',
+      },
+    },
+    {
+      name: 'project_init_manifest',
+      taskReferenceName: 'project_init_manifest_ref',
+      type: 'SIMPLE',
+      inputParameters: {
+        projectId: '${workflow.input.projectId}',
+        localPath: '${project_scaffold_clone_ref.output.localPath}',
+        name: '${workflow.input.name}',
+        projectType: '${workflow.input.projectType}',
+      },
+    },
+    {
+      name: 'project_parse_manifest',
+      taskReferenceName: 'project_scaffold_parse_ref',
+      type: 'SIMPLE',
+      inputParameters: {
+        projectId: '${workflow.input.projectId}',
+        localPath: '${project_scaffold_clone_ref.output.localPath}',
+      },
+    },
+    {
+      name: 'project_store_metadata',
+      taskReferenceName: 'project_scaffold_store_ref',
+      type: 'SIMPLE',
+      inputParameters: {
+        projectId: '${workflow.input.projectId}',
+        localPath: '${project_scaffold_clone_ref.output.localPath}',
+        manifestRaw: '${project_scaffold_parse_ref.output.manifestRaw}',
+        services: '${project_scaffold_parse_ref.output.services}',
+        patterns: '${project_scaffold_parse_ref.output.patterns}',
+      },
+    },
+  ],
+  outputParameters: {
+    repoUrl: '${project_create_repo_ref.output.repoUrl}',
+    repoFullName: '${project_create_repo_ref.output.repoFullName}',
+    localPath: '${project_scaffold_clone_ref.output.localPath}',
+    hasManifest: '${project_scaffold_parse_ref.output.hasManifest}',
+  },
+}
+
 // --- Onboarding workflow ---
 
 export const taskDefs: TaskDef[] = [

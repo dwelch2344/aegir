@@ -146,6 +146,23 @@ export function useProjects() {
     return project
   }
 
+  async function scaffoldProject(input: {
+    organizationId: number
+    name: string
+    owner: string
+    projectType: string
+    description?: string
+    visibility?: string
+  }) {
+    const data = await gql<any>(gatewayUrl, SCAFFOLD_MUTATION, { input })
+    const result = data.projects.projects.scaffold
+    // Refresh the project list to pick up the new project
+    if (input.organizationId) {
+      await fetchProjects(input.organizationId)
+    }
+    return result
+  }
+
   async function syncProject(id: string) {
     const data = await gql<any>(gatewayUrl, SYNC_MUTATION, { id })
     return data.projects.projects.sync
@@ -217,6 +234,7 @@ export function useProjects() {
     fetchProjects,
     fetchProject,
     addProject,
+    scaffoldProject,
     syncProject,
     deleteProject,
     checkStatus,
@@ -250,6 +268,12 @@ const SEARCH_QUERY = `
 const CREATE_MUTATION = `
   mutation($input: ProjectsProjectCreateInput!) {
     projects { projects { create(input: $input) { id name repoUrl branch status createdAt } } }
+  }
+`
+
+const SCAFFOLD_MUTATION = `
+  mutation($input: ProjectsProjectScaffoldInput!) {
+    projects { projects { scaffold(input: $input) { projectId workflowId } } }
   }
 `
 
