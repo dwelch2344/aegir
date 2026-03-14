@@ -9,6 +9,7 @@ import { webPlugin } from '@moribashi/web'
 import type { FastifyInstance } from 'fastify'
 import { resolvers } from './resolvers.js'
 import { typeDefs } from './schema.js'
+import { startKafkaBridge, setPubSub, setWorkflowIdUpdater } from './kafka-bridge.js'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
 
@@ -66,6 +67,35 @@ export async function buildApp() {
   })
 
   fastify.get('/health', async () => ({ status: 'ok', service: 'agents' }))
+
+  // Start Kafka bridge: consumes chat events and bridges to WebSocket pubsub.
+  // We register the pubsub after Mercurius is ready so subscriptions work.
+  fastify.addHook('onReady', async () => {
+    const pubsub = (fastify as any).graphql?.pubsub
+    if (pubsub) {
+      setPubSub((msg) => pubsub.publish(msg))
+    }
+
+    // Register the workflowId updater so the Kafka bridge can update
+    // conversations when workflow.started events arrive from orchestration.
+    setWorkflowIdUpdater(async (conversationId, workflowId) => {
+      try {
+        const db = app.resolve<any>('db')
+        await db.query(`UPDATE conversation SET workflow_id = :workflowId, updated_at = now() WHERE id = :id`, {
+          id: conversationId,
+          workflowId,
+        })
+      } catch (err: any) {
+        console.error(`[kafka-bridge] failed to update workflowId: ${err.message}`)
+      }
+    })
+
+    const ac = new AbortController()
+    fastify.addHook('onClose', () => ac.abort())
+    startKafkaBridge(ac.signal).catch((err) => {
+      console.error(`[agents] kafka bridge failed to start: ${err.message}`)
+    })
+  })
 
   return { app, fastify }
 }

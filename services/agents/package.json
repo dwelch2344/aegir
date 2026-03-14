@@ -18,7 +18,9 @@
     "@moribashi/pg": "^0.1.11",
     "@moribashi/web": "^0.1.11",
     "@aegir/common": "workspace:*",
+    "@aegir/kafka": "workspace:*",
     "fastify": "^5.0.0",
+    "kafkajs": "^2.2.4",
     "graphql": "^16.0.0",
     "mercurius": "^16.0.0"
   },

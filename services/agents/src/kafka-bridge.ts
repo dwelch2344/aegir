@@ -1,0 +1,175 @@
+/**
+ * Kafka bridge for the agents service.
+ *
+ * Produces: agents.chat.commands  → sends chat start/message/close commands to orchestration
+ * Consumes: agents.chat.events    → receives stream chunks, completions, errors from workers
+ *                                   and bridges them to the Mercurius WebSocket pubsub
+ */
+import type { Producer, Consumer } from 'kafkajs'
+import {
+  createKafka,
+  ensureTopics,
+  createProducer,
+  createConsumer,
+  TOPICS,
+  MANAGED_TOPICS,
+  encode,
+  decode,
+  type AgentChatEvent,
+  type AgentChatCommand,
+  type ChatStartCommand,
+  type ChatMessageCommand,
+  type ChatCloseCommand,
+} from '@aegir/kafka'
+
+const kafka = createKafka('agents')
+
+let producer: Producer
+let consumer: Consumer
+
+/** PubSub publish function, injected from the Mercurius subscription context. */
+let pubsubPublish: ((payload: { topic: string; payload: any }) => void) | null = null
+
+/** Callback to update conversation workflowId when workflow starts. */
+let updateWorkflowIdFn: ((conversationId: string, workflowId: string) => Promise<void>) | null = null
+
+/** Register the Mercurius pubsub so Kafka events can be forwarded to WebSocket clients. */
+export function setPubSub(publishFn: (payload: { topic: string; payload: any }) => void) {
+  pubsubPublish = publishFn
+}
+
+/** Register a callback to update conversation workflowId (called from app.ts). */
+export function setWorkflowIdUpdater(fn: (conversationId: string, workflowId: string) => Promise<void>) {
+  updateWorkflowIdFn = fn
+}
+
+export async function startKafkaBridge(signal: AbortSignal): Promise<void> {
+  await ensureTopics(kafka, [...MANAGED_TOPICS])
+
+  producer = await createProducer(kafka)
+  consumer = await createConsumer(kafka, 'agents-events')
+
+  await consumer.subscribe({ topic: TOPICS.AGENT_CHAT_EVENTS, fromBeginning: false })
+
+  await consumer.run({
+    eachMessage: async ({ message }) => {
+      const event = decode<AgentChatEvent>(message.value)
+      if (!event) return
+
+      try {
+        switch (event.type) {
+          case 'chat.stream.chunk':
+            // Bridge stream chunks to WebSocket subscribers
+            publishToWebSocket(event.conversationId, {
+              id: `stream-${Date.now()}`,
+              conversationId: event.conversationId,
+              role: 'assistant',
+              text: event.text,
+              createdAt: event.timestamp,
+            })
+            break
+
+          case 'chat.response.complete':
+            // Final response — the deliver-response worker will persist it,
+            // but we can push it immediately for latency
+            publishToWebSocket(event.conversationId, {
+              id: `complete-${Date.now()}`,
+              conversationId: event.conversationId,
+              role: 'assistant',
+              text: event.response,
+              createdAt: event.timestamp,
+            })
+            break
+
+          case 'chat.error':
+            // Push error notification to the UI
+            publishToWebSocket(event.conversationId, {
+              id: `error-${Date.now()}`,
+              conversationId: event.conversationId,
+              role: 'system',
+              text: `Error: ${event.error}`,
+              createdAt: event.timestamp,
+            })
+            break
+
+          case 'chat.workflow.started':
+            // Update the conversation with the real workflowId from Conductor
+            if (updateWorkflowIdFn) {
+              await updateWorkflowIdFn(event.conversationId, event.workflowId)
+            }
+            console.log(`[kafka-bridge] workflow ${event.workflowId} started for conversation ${event.conversationId}`)
+            break
+        }
+      } catch (err: any) {
+        console.error(`[kafka-bridge] error handling ${event.type}: ${err.message}`)
+      }
+    },
+  })
+
+  signal.addEventListener('abort', async () => {
+    await consumer.disconnect().catch(() => {})
+    await producer.disconnect().catch(() => {})
+  })
+
+  console.log('[kafka-bridge] consuming agents.chat.events → WebSocket pubsub')
+}
+
+function publishToWebSocket(conversationId: string, message: Record<string, unknown>) {
+  if (!pubsubPublish) {
+    console.warn('[kafka-bridge] pubsub not registered yet, dropping message')
+    return
+  }
+  pubsubPublish({
+    topic: 'AGENTS_MESSAGE_ADDED',
+    payload: { agentsMessageAdded: message },
+  })
+}
+
+// ── Command producers ────────────────────────────────────────────
+
+/** Send a chat.start command via Kafka (replaces REST call to orchestration). */
+export async function sendChatStartCommand(conversationId: string, projectId: string | null): Promise<void> {
+  const cmd: ChatStartCommand = {
+    type: 'chat.start',
+    conversationId,
+    projectId,
+    timestamp: new Date().toISOString(),
+  }
+  await producer.send({
+    topic: TOPICS.AGENT_CHAT_COMMANDS,
+    messages: [{ key: conversationId, value: encode(cmd) }],
+  })
+}
+
+/** Send a chat.message command via Kafka (replaces REST call to orchestration). */
+export async function sendChatMessageCommand(
+  conversationId: string,
+  workflowId: string,
+  text: string,
+): Promise<void> {
+  const cmd: ChatMessageCommand = {
+    type: 'chat.message',
+    conversationId,
+    workflowId,
+    text,
+    timestamp: new Date().toISOString(),
+  }
+  await producer.send({
+    topic: TOPICS.AGENT_CHAT_COMMANDS,
+    messages: [{ key: conversationId, value: encode(cmd) }],
+  })
+}
+
+/** Send a chat.close command via Kafka (replaces REST call to orchestration). */
+export async function sendChatCloseCommand(conversationId: string, workflowId: string): Promise<void> {
+  const cmd: ChatCloseCommand = {
+    type: 'chat.close',
+    conversationId,
+    workflowId,
+    timestamp: new Date().toISOString(),
+  }
+  await producer.send({
+    topic: TOPICS.AGENT_CHAT_COMMANDS,
+    messages: [{ key: conversationId, value: encode(cmd) }],
+  })
+}

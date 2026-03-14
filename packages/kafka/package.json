@@ -1,27 +1,27 @@
 {
-  "name": "@aegir/conductor-cdc",
+  "name": "@aegir/kafka",
   "version": "0.0.1",
   "private": true,
   "type": "module",
+  "exports": {
+    ".": {
+      "import": "./dist/index.js",
+      "types": "./dist/index.d.ts"
+    }
+  },
   "scripts": {
     "build": "tsup",
-    "dev": "tsx watch src/index.ts",
-    "start": "tsx src/index.ts",
+    "dev": "tsup --watch",
     "test": "vitest run",
     "test:watch": "vitest"
   },
   "dependencies": {
     "@aegir/common": "workspace:*",
-    "@aegir/kafka": "workspace:*",
-    "avsc": "^5.7.7",
-    "fastify": "^5.0.0",
-    "kafkajs": "^2.2.4",
-    "pg": "^8.13.0"
+    "kafkajs": "^2.2.4"
   },
   "devDependencies": {
-    "@types/pg": "^8.11.0",
+    "@types/node": "^22.0.0",
     "tsup": "^8.0.0",
-    "tsx": "^4.0.0",
     "typescript": "^5.7.0",
     "vitest": "^3.0.0"
   }

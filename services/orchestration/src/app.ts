@@ -21,6 +21,7 @@ import {
 } from './definitions.js'
 import { config } from './config.js'
 import { startWorkers } from './worker-runner.js'
+import { startKafkaBridge } from './kafka-bridge.js'
 
 export async function buildApp() {
   const fastify = Fastify({ logger: true })
@@ -280,6 +281,11 @@ export async function buildApp() {
 
       // Register definitions with Conductor (retry until Conductor is ready)
       await registerWithRetry()
+
+      // Start Kafka bridge (consumes commands, produces events)
+      startKafkaBridge(ac.signal).catch((err) => {
+        console.error(`[orchestration] kafka bridge failed to start: ${err.message}`)
+      })
 
       // Start task workers
       startWorkers(ac.signal)

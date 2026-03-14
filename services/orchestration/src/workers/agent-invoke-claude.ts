@@ -6,6 +6,8 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import type { TaskResult } from '../conductor.js'
 import { config } from '../config.js'
+import { publishChatEvent } from '../kafka-bridge.js'
+import type { ChatStreamChunkEvent, ChatResponseCompleteEvent, ChatErrorEvent } from '@aegir/kafka'
 
 interface StreamEvent {
   type: string
@@ -189,6 +191,17 @@ export async function handleAgentInvokeClaude(task: any): Promise<TaskResult> {
           addTaskLog(task.taskId, `[streaming] ${accumulated.length} chars so far`)
 
           if (conversationId) {
+            // Publish stream chunk via Kafka (primary path)
+            const chunkEvent: ChatStreamChunkEvent = {
+              type: 'chat.stream.chunk',
+              conversationId,
+              text: accumulated,
+              done: false,
+              timestamp: new Date().toISOString(),
+            }
+            publishChatEvent(conversationId, chunkEvent).catch(() => {})
+
+            // Also push via direct GraphQL for backward compatibility
             streamToChat(conversationId, accumulated)
           }
         },
@@ -201,6 +214,18 @@ export async function handleAgentInvokeClaude(task: any): Promise<TaskResult> {
 
     const trimmed = response.trim()
 
+    // Publish completion event via Kafka
+    if (conversationId) {
+      const completeEvent: ChatResponseCompleteEvent = {
+        type: 'chat.response.complete',
+        conversationId,
+        workflowId: task.workflowInstanceId,
+        response: trimmed,
+        timestamp: new Date().toISOString(),
+      }
+      await publishChatEvent(conversationId, completeEvent).catch(() => {})
+    }
+
     return {
       workflowInstanceId: task.workflowInstanceId,
       taskId: task.taskId,
@@ -210,6 +235,19 @@ export async function handleAgentInvokeClaude(task: any): Promise<TaskResult> {
     }
   } catch (err: any) {
     const message = err?.stderr || err?.message || 'Claude CLI invocation failed'
+
+    // Publish error event via Kafka
+    if (conversationId) {
+      const errorEvent: ChatErrorEvent = {
+        type: 'chat.error',
+        conversationId,
+        workflowId: task.workflowInstanceId,
+        error: message,
+        timestamp: new Date().toISOString(),
+      }
+      await publishChatEvent(conversationId, errorEvent).catch(() => {})
+    }
+
     return {
       workflowInstanceId: task.workflowInstanceId,
       taskId: task.taskId,
