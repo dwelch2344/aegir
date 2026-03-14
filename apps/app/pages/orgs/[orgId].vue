@@ -66,7 +66,11 @@ async function load() {
 
     // Load IAM data if we have the IAM org
     if (iamOrg.value) {
-      await loadIamData()
+      try {
+        await loadIamData()
+      } catch (iamErr: any) {
+        console.warn('Failed to load IAM data', iamErr)
+      }
     }
   } catch (e: any) {
     error.value = e.data?.message || 'Failed to load organization'

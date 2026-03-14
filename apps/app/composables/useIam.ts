@@ -34,16 +34,14 @@ interface OrgRelationship {
 
 async function gql<T>(query: string, variables?: Record<string, any>): Promise<T> {
   const config = useRuntimeConfig()
-  const gatewayUrl = import.meta.server
-    ? (config.gatewayUrl as string)
-    : (config.public.gatewayUrl as string)
+  const gatewayUrl = import.meta.server ? (config.gatewayUrl as string) : (config.public.gatewayUrl as string)
 
   const response = await fetch(gatewayUrl, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ query, variables }),
   })
-  const json = await response.json() as { data?: T; errors?: { message: string }[] }
+  const json = (await response.json()) as { data?: T; errors?: { message: string }[] }
   if (json.errors?.length) {
     throw new Error(json.errors[0].message)
   }
@@ -227,10 +225,12 @@ export function useIam() {
 
   // --- Identities (for member selection) ---
 
-  async function searchIdentities(input: { idIn?: number[]; labelLike?: string } = {}): Promise<
-    { id: number; label: string; email: string }[]
-  > {
-    const data = await gql<{ iam: { identities: { search: { results: { id: number; label: string; email: string }[] } } } }>(
+  async function searchIdentities(
+    input: { idIn?: number[]; labelLike?: string } = {},
+  ): Promise<{ id: number; label: string; email: string }[]> {
+    const data = await gql<{
+      iam: { identities: { search: { results: { id: number; label: string; email: string }[] } } }
+    }>(
       `query($input: IamIdentitySearchInput!) {
         iam { identities { search(input: $input) { results { id label email } } } }
       }`,
