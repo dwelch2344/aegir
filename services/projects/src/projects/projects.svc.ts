@@ -1,6 +1,15 @@
 import { execSync } from 'node:child_process'
 import type { Db } from '@moribashi/pg'
 
+/** Convert any Date instances in a row to ISO-8601 strings (pg driver returns TIMESTAMPTZ as Date objects). */
+function serializeDates<T extends Record<string, unknown>>(row: T): T {
+  const out = { ...row }
+  for (const [k, v] of Object.entries(out)) {
+    if (v instanceof Date) (out as any)[k] = v.toISOString()
+  }
+  return out
+}
+
 export interface Project {
   id: string
   organizationId: number
@@ -67,7 +76,7 @@ export default class ProjectsService {
        FROM project ${where} ORDER BY updated_at DESC`,
       params,
     )
-    return { results }
+    return { results: results.map(serializeDates) }
   }
 
   async create(input: { organizationId: number; name: string; repoUrl: string; branch?: string }) {
@@ -82,7 +91,7 @@ export default class ProjectsService {
         branch: input.branch ?? 'main',
       },
     )
-    return rows[0]
+    return serializeDates(rows[0])
   }
 
   async update(id: string, input: Record<string, unknown>) {
@@ -119,7 +128,7 @@ export default class ProjectsService {
        RETURNING id, organization_id, name, repo_url, branch, local_path, status, last_synced_at, manifest_raw, created_at, updated_at`,
       params,
     )
-    return rows[0] ?? null
+    return rows[0] ? serializeDates(rows[0]) : null
   }
 
   async delete(id: string) {
@@ -150,7 +159,7 @@ export default class ProjectsService {
       `SELECT id, project_id, pattern_id, version, applied_at FROM project_pattern WHERE project_id = :projectId ORDER BY pattern_id`,
       { projectId },
     )
-    return results
+    return results.map(serializeDates)
   }
 
   async replacePatterns(projectId: string, pats: { patternId: string; version: string; appliedAt?: string }[]) {
@@ -169,7 +178,7 @@ export default class ProjectsService {
        FROM project_status_report WHERE project_id = :projectId ORDER BY checked_at DESC LIMIT 1`,
       { projectId },
     )
-    return rows[0] ?? null
+    return rows[0] ? serializeDates(rows[0]) : null
   }
 
   async activities(projectId: string) {
@@ -187,11 +196,11 @@ export default class ProjectsService {
        FROM project_activity WHERE project_id = :projectId ORDER BY started_at DESC LIMIT 20`,
       { projectId },
     )
-    return rows
+    return rows.map(serializeDates)
   }
 
   async activityEntries(activityId: string) {
-    return this.db.query<{
+    const rows = await this.db.query<{
       id: string
       activityId: string
       taskName: string
@@ -203,6 +212,7 @@ export default class ProjectsService {
        FROM project_activity_log WHERE activity_id = :activityId ORDER BY created_at`,
       { activityId },
     )
+    return rows.map(serializeDates)
   }
 
   async diagnosticsReportById(id: string) {
@@ -210,7 +220,7 @@ export default class ProjectsService {
       `SELECT id, project_id, report, created_at FROM project_diagnostics_report WHERE id = :id`,
       { id },
     )
-    return rows[0] ?? null
+    return rows[0] ? serializeDates(rows[0]) : null
   }
 
   async logActivity(input: {
@@ -315,7 +325,7 @@ export default class ProjectsService {
        FROM project_diagnostics_report WHERE project_id = :projectId ORDER BY created_at DESC LIMIT 1`,
       { projectId },
     )
-    return rows[0] ?? null
+    return rows[0] ? serializeDates(rows[0]) : null
   }
 
   async saveDiagnosticsReport(input: { projectId: string; report: string }) {
@@ -325,7 +335,7 @@ export default class ProjectsService {
        RETURNING id, project_id, report, created_at`,
       { projectId: input.projectId, report: input.report },
     )
-    return rows[0]
+    return serializeDates(rows[0])
   }
 
   async saveStatusReport(report: {
@@ -347,6 +357,6 @@ export default class ProjectsService {
         outdatedPatterns: report.outdatedPatterns,
       },
     )
-    return rows[0]
+    return serializeDates(rows[0])
   }
 }
