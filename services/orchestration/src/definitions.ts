@@ -492,6 +492,7 @@ export const projectSyncWorkflow: WorkflowDef = {
       inputParameters: {
         projectId: '${workflow.input.projectId}',
         repoUrl: '${workflow.input.repoUrl}',
+        repoFullName: '${workflow.input.repoFullName}',
         branch: '${workflow.input.branch}',
       },
     },
@@ -578,6 +579,7 @@ export const projectScaffoldWorkflow: WorkflowDef = {
       inputParameters: {
         projectId: '${workflow.input.projectId}',
         repoUrl: '${project_create_repo_ref.output.repoUrl}',
+        repoFullName: '${project_create_repo_ref.output.repoFullName}',
         branch: 'main',
       },
     },

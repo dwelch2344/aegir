@@ -53,13 +53,8 @@ services:
       KEYCLOAK_ADMIN_API_URL: http://keycloak:8080/infra/idp
 
     volumes:
-      # - ~/.ssh:/home/node/.ssh:rw
-      # - ~/.npmrc:/home/node/.npmrc:rw
-      # - ~/.gitconfig:/home/node/.gitconfig:rw
-      # - ~/.aws:/home/node/.aws:rw
-      # - ~/.docker:/home/node/.docker:rw
-      # - ~/.gnupg:/home/node/.gnupg:rw
-      # - ~/.claude:/home/node/.claude:rw
+      - ~/.ssh:/home/node/.ssh:ro
+      - ~/.gitconfig:/home/node/.gitconfig:ro
       - ..:/workspace
 
       ### Dev container gets access to host docker

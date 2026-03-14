@@ -6,7 +6,7 @@ import { config } from '../config.js'
 import { logProjectActivity } from './project-activity.js'
 
 export async function handleProjectClone(task: any): Promise<TaskResult> {
-  const { projectId, repoUrl, branch } = task.inputData ?? {}
+  const { projectId, repoUrl, repoFullName, branch } = task.inputData ?? {}
   const wfId = task.workflowInstanceId
 
   await logProjectActivity({
@@ -30,8 +30,10 @@ export async function handleProjectClone(task: any): Promise<TaskResult> {
         timeout: 60_000,
       })
     } else {
-      // Fresh clone
-      execSync(`git clone --branch ${branch ?? 'main'} --depth 1 ${repoUrl} ${localPath}`, {
+      // Fresh clone — use gh for auth when we have a full name, fall back to repoUrl
+      const cloneTarget = repoFullName || repoUrl
+      const branchArg = branch ? `-- --branch ${branch} --depth 1` : '-- --depth 1'
+      execSync(`gh repo clone ${cloneTarget} ${localPath} ${branchArg}`, {
         timeout: 120_000,
       })
     }
