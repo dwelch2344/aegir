@@ -21,12 +21,12 @@ export async function handleProjectCreateRepo(task: any): Promise<TaskResult> {
 
     // Create the repo on GitHub
     const repoFullName = `${owner}/${name}`
-    execSync(`gh repo create ${repoFullName} ${vis} ${descFlag} --confirm`, {
+    execSync(`gh repo create ${repoFullName} ${vis} ${descFlag}`, {
       encoding: 'utf-8',
       timeout: 30_000,
     })
 
-    const repoUrl = `git@github.com:${repoFullName}.git`
+    const repoUrl = `https://github.com/${repoFullName}.git`
 
     await logProjectActivity({
       projectId,
