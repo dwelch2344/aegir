@@ -1,0 +1,284 @@
+id: infra.aws-eks-gitops
+version: "0.1.0"
+name: AWS EKS GitOps Infrastructure
+description: >
+  A comprehensive AWS infrastructure plan for GitOps-driven deployment using
+  EKS, ArgoCD, and Crossplane. Provides a two-repo architecture (platform repo
+  + application repos) where OpenTofu/Terragrunt provisions foundational AWS
+  resources (VPC, EKS clusters, ECR, IAM), ArgoCD manages platform components
+  and application workloads via app-of-apps, and Crossplane enables declarative
+  provisioning of backing services (RDS, ElastiCache, S3, MSK) through
+  Kubernetes-native Claims. Supports multi-tenant isolation via Argo
+  AppProjects, namespace-scoped RBAC, and swim lane environments (dev, stage,
+  prod). Currently in Planned status — no infrastructure code has been
+  implemented yet.
+
+preconditions:
+  - harness.devcontainer
+  - build.pnpm-turbo
+
+provides:
+  - aws-eks-clusters
+  - gitops-deployment-pipeline
+  - argocd-app-of-apps
+  - crossplane-resource-provisioning
+  - multi-environment-swim-lanes
+  - ci-cd-github-actions
+  - observability-stack-hosted
+  - secrets-management-aws
+  - multi-tenant-platform
+
+parameters:
+  projectName:
+    type: string
+    required: true
+    description: >
+      Project identifier used as a prefix for all AWS resources, Kubernetes
+      namespaces, and ArgoCD AppProjects (e.g., "aegir").
+  awsRegion:
+    type: string
+    required: true
+    default: "us-east-1"
+    description: AWS region for all infrastructure resources.
+  domain:
+    type: string
+    required: false
+    description: >
+      Optional custom domain for the project. If provided, Route53 hosted zone,
+      ACM wildcard cert, and external-dns are configured. If omitted,
+      ALB-generated URLs are used.
+  githubOrg:
+    type: string
+    required: true
+    description: >
+      GitHub organization owning the repos. Used for OIDC trust policies and
+      ECR push permissions.
+  enableProdCluster:
+    type: boolean
+    required: false
+    default: false
+    description: >
+      Whether to provision a separate production cluster. Set to false to
+      start with pre-prod only and add prod later.
+
+application_instructions: |
+  ## Status: PLANNED
+
+  This pattern documents an 8-phase implementation plan. No infrastructure
+  code has been written yet. The plan is derived from two design documents:
+  `docs/infra-plan.md` (single-repo approach) and
+  `docs/infra-distributed-plan.md` (two-repo multi-tenant refinement).
+
+  When implementing, follow the distributed (two-repo) plan as the target
+  architecture.
+
+  ---
+
+  ## Phase 0 — Bootstrap (Manual, One-Time)
+
+  Provision foundational AWS resources via `infra-platform/bootstrap/main.tf`:
+  1. S3 bucket for OpenTofu state (versioned, encrypted, native locking)
+  2. GitHub OIDC Identity Provider in AWS IAM
+  3. IAM Role `${project}-github-infra` trusted by OIDC for infrastructure
+     workflows
+  4. IAM Role `${project}-github-deploy` scoped to main branch for ECR push
+     and EKS access
+  5. ECR repositories — one per deployable service
+
+  Manual steps: `aws configure`, edit `terraform.tfvars`, run
+  `tofu init && tofu apply`, set GitHub Actions secrets.
+
+  ## Phase 1 — Foundation (OpenTofu via Terragrunt)
+
+  Provision per-environment with isolated state files:
+
+  **VPC**: Dev/stage share `10.0.0.0/16`, prod gets `10.1.0.0/16`. 3 AZs with
+  public, private, and intra subnets. Single NAT for pre-prod, HA NAT for prod.
+
+  **EKS Clusters**:
+  - `${project}-dev` — Spot `m7i.large` (2-6) + On-Demand `t3.medium` system
+    (1-2), hosts dev + stage namespaces
+  - `${project}-prod` — On-Demand `m7i.large` (3-10) + On-Demand `t3.medium`
+    system (2-3), hosts prod namespace
+
+  Addons: CoreDNS, kube-proxy, vpc-cni, EBS CSI, pod-identity-agent. IRSA
+  enabled, etcd encryption via KMS.
+
+  ## Phase 1b — Foundation Addons
+
+  Install via `helm_release` in OpenTofu (must exist before ArgoCD):
+  1. AWS Load Balancer Controller
+  2. external-dns (Route53 record management)
+  3. cert-manager (internal TLS)
+  4. ArgoCD (installed last, after networking is ready)
+
+  These remain OpenTofu-managed to avoid circular dependencies.
+
+  ## Phase 2 — Platform (ArgoCD App-of-Apps)
+
+  ArgoCD self-manages remaining platform components:
+  - External Secrets Operator (AWS Secrets Manager sync)
+  - Crossplane + provider-aws (declarative AWS resource provisioning)
+  - kube-prometheus-stack (Prometheus + Grafana + Alertmanager)
+  - Loki + Tempo (logs + distributed tracing)
+
+  ## Phase 3 — Data Plane (Crossplane)
+
+  Define reusable Crossplane Compositions + XRDs for:
+  - `rds-postgres` (dev: t4g.micro, prod: Aurora Serverless v2)
+  - `elasticache-redis` (dev: t4g.micro, prod: Serverless)
+  - `s3-bucket`
+  - `msk-serverless` (prod Kafka)
+
+  Application repos file Claims against these Compositions.
+
+  ## Phase 4 — Tenant Onboarding
+
+  Create the `tenant-onboarding/` OpenTofu module that provisions per-project:
+  - ECR repositories per service
+  - Kubernetes namespaces (`${project}-${lane}`)
+  - Namespace-scoped RBAC
+  - Argo AppProject (scoped to project namespaces + repo)
+  - Secrets Manager prefix with IAM policies
+  - Crossplane ProviderConfig
+
+  ## Phase 5 — Application Deployment
+
+  For the first tenant (this project):
+  - Create `infra/config.yaml` in the application repo
+  - Write a shared Helm chart (`infra/charts/service/`)
+  - Define ArgoCD ApplicationSet (matrix generator: lanes x services)
+  - Set up GitHub Actions: CI on PR, build + push to ECR on merge to main
+  - Dev auto-deploys via ArgoCD auto-sync
+
+  ## Phase 6 — Swim Lanes & Promotion
+
+  - Dev: auto-sync on merge to main
+  - Stage/prod: PR-based promotion updating image tags in values files
+  - NetworkPolicies + ResourceQuotas enforce isolation between lanes on shared
+    clusters
+
+  ## Phase 7 — Hardening
+
+  - NetworkPolicies restricting cross-namespace traffic
+  - Pod Security Standards (restricted profile)
+  - Alerting rules for resource exhaustion and service degradation
+  - Automated RDS backups and point-in-time recovery
+  - Disaster recovery runbook
+
+  ---
+
+  ## Repo Structure (Platform)
+
+  ```
+  infra-platform/
+    config.yaml
+    bootstrap/
+    foundation/
+      modules/ (vpc, eks-cluster, ecr-registry)
+      terragrunt.hcl
+      pre-prod/ (vpc, eks, ecr — each with terragrunt.hcl)
+      prod/
+    foundation-addons/ (alb-controller, external-dns, cert-manager, argocd)
+    platform/ (app-of-apps, platform-apps)
+    charts/ (service, stateful-service)
+    crossplane/ (compositions, xrds)
+    tenant-onboarding/
+  ```
+
+  ## Repo Structure (Application)
+
+  ```
+  my-project/
+    infra/
+      config.yaml
+      apps/ (base, dev, stage, prod)
+      claims/ (dev, prod — Crossplane Claims)
+      values/ (base.yaml, dev.yaml, stage.yaml, prod.yaml)
+  ```
+
+test_criteria:
+  - description: Bootstrap applies successfully and OIDC role is assumable
+    manual: >
+      Run `tofu apply` in bootstrap directory. Verify S3 state bucket exists,
+      OIDC provider is created, and the GitHub Actions workflow can assume
+      the `${project}-github-infra` IAM role.
+
+  - description: Foundation provisions EKS cluster reachable via kubectl
+    manual: >
+      Trigger the infra-apply GitHub Actions workflow. Verify VPC, subnets,
+      and EKS cluster are created. Run `kubectl get nodes` against the
+      cluster and confirm nodes are Ready.
+
+  - description: ArgoCD is accessible and all platform apps are healthy
+    manual: >
+      After Phase 2, verify ArgoCD UI is accessible (via ALB Ingress or
+      port-forward). All platform Applications should show Healthy + Synced
+      status.
+
+  - description: Crossplane Claims reconcile and backing services are reachable
+    manual: >
+      Apply a dev RDS Claim and verify the Crossplane resource shows
+      Ready=True. Confirm the RDS endpoint is reachable from a pod in the
+      dev namespace.
+
+  - description: Application services deploy to dev namespace via ArgoCD
+    manual: >
+      After first tenant onboarding, merge to main and verify all services
+      appear as Running pods in the `${project}-dev` namespace. Ingress
+      paths return expected responses.
+
+  - description: Multi-tenant isolation prevents cross-tenant access
+    manual: >
+      Register a second tenant. Verify Tenant A cannot list or modify
+      Tenant B's Argo Applications, access Tenant B's namespace, or read
+      Tenant B's secrets.
+
+security_notes: |
+  - **IAM least privilege**: All IAM roles use scoped policies. The
+    `github-infra` role has infrastructure provisioning permissions only.
+    The `github-deploy` role is restricted to ECR push, EKS describe, and
+    Secrets Manager read — scoped to the main branch via OIDC conditions.
+    Crossplane ProviderConfigs use namespace-scoped credentials.
+  - **No hardcoded AWS credentials**: All AWS access uses OIDC federation
+    (GitHub Actions), IRSA (in-cluster pods), or Crossplane provider
+    configs. No AWS access keys or secret keys are stored in code,
+    environment variables, or Kubernetes Secrets.
+  - **Network policies**: NetworkPolicies restrict cross-namespace traffic.
+    Pods in the dev namespace cannot reach pods in stage or prod namespaces.
+    Intra-subnet security groups isolate RDS and ElastiCache from public
+    subnets.
+  - **Secrets management via External Secrets Operator**: Application
+    secrets are stored in AWS Secrets Manager under `${project}/${env}/`
+    prefixes. ESO syncs them into Kubernetes Secrets. IAM policies ensure
+    each project's pods can only read their own prefix. No secrets are
+    stored in Git, Helm values, or ConfigMaps.
+  - **VPC isolation**: Pre-prod and prod use separate VPCs. Private subnets
+    (pods/nodes) have no direct internet ingress. NAT gateways provide
+    egress-only internet access. RDS and ElastiCache reside in intra
+    subnets with no public endpoints.
+  - **Pod security standards**: Enforce the Kubernetes "restricted" Pod
+    Security Standard. Containers run as non-root, drop all capabilities,
+    use read-only root filesystems where possible, and disallow privilege
+    escalation.
+  - **EKS encryption**: etcd data is encrypted at rest via a customer-
+    managed KMS key. EBS volumes used by persistent workloads use encrypted
+    storage classes.
+  - **ArgoCD multi-tenant isolation**: Each tenant gets an AppProject that
+    restricts source repos, destination namespaces, and cluster-scoped
+    resource access. Tenants cannot deploy to other tenants' namespaces or
+    modify platform resources.
+
+touchpoints:
+  - docs/infra-plan.md
+  - docs/infra-distributed-plan.md
+  - infra/config.yaml
+  - infra/bootstrap/main.tf
+  - infra/foundation/
+  - infra/platform/
+  - infra/charts/
+  - infra/crossplane/
+  - infra/apps/
+  - .github/workflows/infra-plan.yaml
+  - .github/workflows/infra-apply.yaml
+  - .github/workflows/build-push.yaml

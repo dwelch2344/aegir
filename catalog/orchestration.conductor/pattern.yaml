@@ -1,0 +1,217 @@
+id: orchestration.conductor
+version: "0.1.0"
+name: Netflix Conductor Workflow Orchestration
+description: >
+  Netflix Conductor-based workflow orchestration with TypeScript task workers.
+  Provides a Fastify REST API for triggering workflows and signaling WAIT tasks,
+  a polling-based worker runner that maps task types to handler functions, and a
+  Conductor client library for task/workflow registration, polling, and completion.
+  Includes three proven workflow patterns: sequential task chains (user onboarding),
+  human-in-the-loop flows using WAIT tasks with external signaling (contracting),
+  and persistent conversational loops using DO_WHILE with WAIT tasks (agent chat).
+
+preconditions:
+  - harness.devcontainer
+  - db.postgres-isolated
+
+provides:
+  - workflow-orchestration
+  - task-worker-framework
+  - sequential-workflow
+  - human-in-the-loop-workflow
+  - conversational-loop-workflow
+  - workflow-rest-api
+
+parameters:
+  conductorUrl:
+    type: string
+    required: true
+    default: http://conductor:8080/api
+    description: >
+      Base URL for the Conductor REST API. In the devcontainer stack this
+      points to the conductor service via Docker DNS.
+  orchestrationPort:
+    type: number
+    required: false
+    default: 4010
+    description: >
+      Port the orchestration Fastify service listens on.
+  ownerEmail:
+    type: string
+    required: true
+    description: >
+      Owner email set on task and workflow definitions. Used by Conductor
+      for audit and notification purposes.
+  pollIntervalMs:
+    type: number
+    required: false
+    default: 1000
+    description: >
+      Interval in milliseconds between task poll cycles for each worker.
+
+application_instructions: |
+  ## 1. Create the orchestration service package
+
+  Create `services/orchestration/` with the following structure:
+
+  ```
+  services/orchestration/
+    package.json
+    src/
+      index.ts              # Entry point — builds and starts the app
+      app.ts                # Fastify app with REST endpoints
+      config.ts             # Environment-based configuration
+      conductor.ts          # Conductor API client (register, poll, update, signal)
+      definitions.ts        # Task and workflow definitions
+      worker-runner.ts      # Polling worker loop that dispatches to handlers
+      workers/              # One handler file per task type
+  ```
+
+  Add `@aegir/common` (workspace) and `fastify` as dependencies. Add `tsup`,
+  `tsx`, `typescript`, and `vitest` as dev dependencies.
+
+  ## 2. Implement the Conductor client (`conductor.ts`)
+
+  The client wraps Conductor's REST API with these functions:
+
+  - `registerTaskDefs(defs)` — POST to `/metadata/taskdefs`
+  - `registerWorkflow(def)` — PUT to `/metadata/workflow`
+  - `startWorkflow(name, input, version)` — POST to `/workflow`
+  - `pollTask(taskType, workerId)` — GET `/tasks/poll/{taskType}`
+  - `updateTask(result)` — POST to `/tasks`
+  - `getWorkflow(workflowId)` — GET `/workflow/{workflowId}`
+  - `signalWaitTask(workflowId, taskRefName, output)` — finds the
+    in-progress WAIT task and completes it with the given output
+
+  Handle 409 (already exists) as success for idempotent registration.
+
+  ## 3. Define task and workflow definitions (`definitions.ts`)
+
+  Export TypeScript objects conforming to the `TaskDef` and `WorkflowDef`
+  interfaces. Each task definition must specify:
+
+  - `name` — unique task identifier
+  - `retryCount`, `retryLogic`, `retryDelaySeconds` — retry behavior
+  - `timeoutSeconds`, `responseTimeoutSeconds` — timeout enforcement
+  - `timeoutPolicy` — what happens on timeout (`TIME_OUT_WF` or `RETRY`)
+  - `ownerEmail` — audit trail
+
+  ### Workflow pattern: Sequential
+
+  A linear chain of SIMPLE tasks where each task's output feeds the next
+  task's input via Conductor's `${refName.output.field}` syntax.
+
+  ### Workflow pattern: Human-in-the-loop (WAIT tasks)
+
+  Insert a `WAIT` type task between SIMPLE tasks. The workflow pauses at
+  the WAIT task until an external system calls `signalWaitTask()` with
+  the workflow ID and task reference name.
+
+  ### Workflow pattern: Persistent conversational loop (DO_WHILE + WAIT)
+
+  Use a `DO_WHILE` task wrapping a WAIT task followed by processing tasks.
+  The loop continues until the WAIT task output meets the exit condition
+  (e.g., `$.ref['action'] != 'close'`). Each iteration waits for external
+  input, processes it, delivers a response, then loops back to wait again.
+
+  ## 4. Implement the worker runner (`worker-runner.ts`)
+
+  Create a `handlers` registry mapping task type names to handler functions.
+  The `startWorkers()` function launches a polling loop per task type.
+  Each loop calls `pollTask()`, invokes the handler, and calls `updateTask()`
+  with the result. Workers identify themselves with a unique worker ID
+  (e.g., `orchestration-${process.pid}`).
+
+  ## 5. Implement task worker handlers (`workers/*.ts`)
+
+  Each handler receives the raw Conductor task object and returns a
+  `TaskResult` with `status: 'COMPLETED' | 'FAILED'`, `outputData`, and
+  optional `logs`. Handlers should be pure functions of their input where
+  possible.
+
+  ## 6. Wire up the Fastify app (`app.ts`)
+
+  On startup:
+  1. Register all task definitions with Conductor (retry until ready)
+  2. Register all workflow definitions
+  3. Start the worker polling loops
+  4. Listen on the configured port
+
+  Expose REST endpoints:
+  - `GET /health` — health check
+  - `POST /<domain>/<action>` — start a workflow
+  - `GET /<domain>/status/:workflowId` — get workflow status
+  - `POST /<domain>/approve-step` — signal a WAIT task
+
+  ## 7. Add to docker-compose environment
+
+  Ensure these environment variables are set on the dev container:
+
+  ```yaml
+  CONDUCTOR_URL: http://conductor:8080/api
+  ```
+
+test_criteria:
+  - description: Conductor is running and healthy
+    command: curl -sf http://conductor:8080/health
+  - description: Task definitions are registered with Conductor
+    command: >-
+      curl -sf http://conductor:8080/api/metadata/taskdefs
+      | grep -q 'validate_identity'
+  - description: Workflow definitions are registered with Conductor
+    command: >-
+      curl -sf http://conductor:8080/api/metadata/workflow
+      | grep -q 'user_onboarding'
+  - description: Orchestration health endpoint responds
+    command: curl -sf http://localhost:4010/health | grep -q 'ok'
+  - description: Starting a workflow returns a workflow ID
+    command: >-
+      curl -sf -X POST http://localhost:4010/onboard
+      -H 'Content-Type: application/json'
+      -d '{"email":"test@example.com","name":"Test User"}'
+      | grep -q 'workflowId'
+  - description: WAIT task can be signaled to advance the workflow
+    manual: >
+      Start a workflow that contains a WAIT task, then call the
+      approve-step endpoint with the workflowId and taskRefName.
+      Verify the workflow advances past the WAIT task.
+  - description: Unit tests pass
+    command: cd /workspace/services/orchestration && pnpm test
+
+security_notes: |
+  - **Workflow input validation:** All workflow inputs arrive as untyped JSON
+    from the Conductor API. Task workers must validate and sanitize input
+    parameters before acting on them. Never trust workflow input for
+    constructing database queries, file paths, or shell commands.
+  - **Task timeout enforcement:** Every task definition must specify
+    `timeoutSeconds` and `responseTimeoutSeconds`. Without timeouts, a
+    stuck worker can block a workflow indefinitely. Use `timeoutPolicy:
+    TIME_OUT_WF` to fail the workflow on timeout rather than silently
+    retrying forever.
+  - **No secrets in workflow definitions:** Workflow and task definitions
+    are stored in Conductor's metadata database and are visible in the
+    Conductor UI. Never embed API keys, passwords, or tokens in
+    `inputParameters`. Instead, have workers read secrets from environment
+    variables or a secret store at execution time.
+  - **Conductor API is unauthenticated in local dev:** The Conductor REST
+    API has no authentication in the devcontainer stack. In production,
+    Conductor must be deployed behind an authenticated gateway or with its
+    built-in auth module enabled.
+  - **Worker ID uniqueness:** Workers identify themselves with a process-
+    specific ID. In multi-instance deployments, ensure worker IDs are
+    globally unique to prevent task-stealing conflicts.
+
+touchpoints:
+  - services/orchestration/package.json
+  - services/orchestration/src/index.ts
+  - services/orchestration/src/app.ts
+  - services/orchestration/src/config.ts
+  - services/orchestration/src/conductor.ts
+  - services/orchestration/src/definitions.ts
+  - services/orchestration/src/worker-runner.ts
+  - "services/orchestration/src/workers/"
+  - .devcontainer/docker-compose.yml
+  - .devcontainer/conductor/Dockerfile
+  - .devcontainer/conductor/config.properties
+  - .devcontainer/conductor-ui/Dockerfile
+  - .devcontainer/conductor-ui/nginx.conf

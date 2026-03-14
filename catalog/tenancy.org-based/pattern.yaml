@@ -1,0 +1,310 @@
+id: tenancy.org-based
+version: "0.1.0"
+name: Multi-Tenancy via Keycloak Organizations
+description: >
+  Implements multi-tenancy using Keycloak Organizations as the source of
+  truth for org identity, synced to application-level data in the IAM
+  service's PostgreSQL schema. Each Organization represents a logical
+  tenant boundary (customer, team, or business unit) — not to be confused
+  with the platform-level Tenant entity, which represents the platform
+  instance itself. Organizations are created and managed in Keycloak, then
+  synced to the IAM database via the IamOrganizationsOps.sync mutation.
+  A protected System org (id=1, key="system") is always present and cannot
+  be modified through normal sync or mutation operations.
+
+preconditions:
+  - auth.oidc-keycloak
+  - db.postgres-isolated
+
+provides:
+  - tenancy.org-model
+  - tenancy.org-sync
+  - tenancy.protected-org
+  - tenancy.org-crud
+
+parameters:
+  project_name:
+    type: string
+    required: true
+    description: >
+      The project identifier used as the key for the operator's own
+      organization (id=2). Also used in seed data naming.
+  system_org_id:
+    type: number
+    required: false
+    default: 1
+    description: >
+      The fixed ID for the System organization. This value is stable
+      across all ships and must not be changed.
+  system_org_key:
+    type: string
+    required: false
+    default: system
+    description: >
+      The fixed key for the System organization.
+
+application_instructions: |
+  ## 1. Organization database table
+
+  Create the migration `V0.0.1__create_organization.sql` in the IAM
+  service's migrations directory (`services/iam/data/migrations/`):
+
+  ```sql
+  CREATE TABLE organization (
+      id         SERIAL       PRIMARY KEY,
+      key        VARCHAR(100) NOT NULL UNIQUE,
+      name       VARCHAR(255) NOT NULL,
+      created_at TIMESTAMPTZ  NOT NULL DEFAULT now(),
+      updated_at TIMESTAMPTZ  NOT NULL DEFAULT now()
+  );
+  ```
+
+  ## 2. Add Keycloak ID column
+
+  Create `V0.0.4__add_organization_keycloak_id.sql`:
+
+  ```sql
+  ALTER TABLE organization ADD COLUMN keycloak_id VARCHAR(255) UNIQUE;
+
+  -- Backfill existing rows — real Keycloak IDs will be synced at runtime
+  UPDATE organization SET keycloak_id = 'kc-placeholder-' || id
+    WHERE keycloak_id IS NULL;
+  ```
+
+  The `keycloak_id` column stores the Keycloak Organization UUID, enabling
+  bidirectional sync between Keycloak and the application database.
+
+  ## 3. Add protected flag
+
+  Create `V0.0.5__add_organization_protected.sql`:
+
+  ```sql
+  ALTER TABLE organization ADD COLUMN protected BOOLEAN NOT NULL DEFAULT false;
+  ```
+
+  Protected organizations (specifically the System org) are skipped by sync
+  operations and cannot be modified via normal API mutations.
+
+  ## 4. Seed data
+
+  Create `V0.0.3__seed.sql` with bootstrap organizations and identities:
+
+  ```sql
+  INSERT INTO organization (id, key, name, protected) VALUES
+      (1, 'system',         'System',              true),
+      (2, '<project_name>', '<Project Name> Inc.', false);
+
+  SELECT setval('organization_id_seq', (SELECT max(id) FROM organization));
+  ```
+
+  The System org (id=1) is always protected. The project org (id=2) is the
+  operator's own organization.
+
+  ## 5. Organization service
+
+  Create `services/iam/src/organizations/organizations.svc.ts`:
+
+  - **search(input)** — query organizations with optional filters: `idIn`,
+    `keycloakIdIn`, `keyLike`, `nameLike`. Uses parameterized queries with
+    ILIKE for text search.
+  - **sync(inputs)** — upsert organizations from Keycloak. For each input:
+    1. Try to claim an existing row by `key` (for seeded orgs that predate
+       Keycloak sync). Only updates non-protected orgs. Handles placeholder
+       keycloak_ids from the backfill migration.
+    2. If no row was claimed, upsert by `keycloak_id` using
+       `ON CONFLICT (keycloak_id) DO UPDATE`.
+    3. Protected orgs are never modified by sync.
+
+  ## 6. GraphQL schema (Moribashi namespace convention)
+
+  Add to `services/iam/src/schema.ts`:
+
+  ```graphql
+  type Organization @key(fields: "id") {
+    id: Int!
+    key: String!
+    name: String!
+    keycloakId: String
+    protected: Boolean!
+  }
+
+  type IamOrganizationSearch {
+    results: [Organization!]!
+  }
+
+  input IamOrganizationSearchInput {
+    idIn: [Int!]
+    keycloakIdIn: [String!]
+    keyLike: String
+    nameLike: String
+  }
+
+  type IamOrganizations {
+    search(input: IamOrganizationSearchInput!): IamOrganizationSearch!
+  }
+
+  input IamOrganizationSyncInput {
+    keycloakId: String!
+    key: String!
+    name: String!
+  }
+
+  type IamOrganizationsOps {
+    sync(input: [IamOrganizationSyncInput!]!): [Organization!]!
+  }
+  ```
+
+  Wire into the namespace containers:
+
+  ```graphql
+  type Iam {
+    orgs: IamOrganizations!
+  }
+
+  type IamOps {
+    orgs: IamOrganizationsOps!
+  }
+  ```
+
+  ## 7. Resolvers
+
+  In `services/iam/src/resolvers.ts`, add resolvers using the
+  `bindResolversToScope` pattern:
+
+  ```typescript
+  IamOrganizations: {
+    async search(this: RequestCradle, _, args) {
+      return this.organizationsService.search(args.input)
+    },
+  },
+  IamOrganizationsOps: {
+    async sync(this: RequestCradle, _, args) {
+      return this.organizationsService.sync(args.input)
+    },
+  },
+  Organization: {
+    async __resolveReference(this: RequestCradle, ref: { id: number }) {
+      const { results } = await this.organizationsService.search({ idIn: [ref.id] })
+      return results[0] ?? null
+    },
+  },
+  ```
+
+  ## 8. App-level org management (Keycloak Admin API)
+
+  Create server API routes that proxy org CRUD to Keycloak:
+
+  - `GET /api/orgs` — list organizations from Keycloak Admin API
+  - `POST /api/orgs` — create an organization in Keycloak
+  - `GET /api/orgs/[orgId]` — get organization details + members
+  - `PUT /api/orgs/[orgId]` — update organization
+  - `DELETE /api/orgs/[orgId]` — delete organization
+  - `GET /api/orgs/[orgId]/members` — list members
+  - `POST /api/orgs/[orgId]/members` — add member to org
+  - `DELETE /api/orgs/[orgId]/members/[memberId]` — remove member
+
+  After any create/update/delete in Keycloak, call the IAM service's
+  `iam.orgs.sync` mutation to keep application data in sync.
+
+test_criteria:
+  - description: Organization table exists with all required columns
+    command: >
+      PGPASSWORD=iam_dev psql -h postgres -U iam_svc -d aegir
+      -c "SELECT id, key, name, keycloak_id, protected, created_at, updated_at
+          FROM iam.organization LIMIT 1;"
+  - description: System org is seeded with protected=true
+    command: >
+      PGPASSWORD=iam_dev psql -h postgres -U iam_svc -d aegir
+      -c "SELECT protected FROM iam.organization WHERE id=1;"
+      | grep -q t
+  - description: Sync mutation inserts new organizations
+    command: >
+      curl -sf http://localhost:4000/graphql
+      -H 'Content-Type: application/json'
+      -d '{"query":"mutation { iam { orgs { sync(input: [{keycloakId: \"test-kc-id\", key: \"test-org\", name: \"Test Org\"}]) { id key name } } } }"}'
+      | grep -q test-org
+  - description: Sync mutation skips protected organizations
+    manual: >
+      Attempt to sync an organization with key="system". Verify the System
+      org's name and keycloak_id are not modified. The sync should either
+      skip the row silently or return the unmodified System org.
+  - description: Search query filters by key pattern
+    command: >
+      curl -sf http://localhost:4000/graphql
+      -H 'Content-Type: application/json'
+      -d '{"query":"{ iam { orgs { search(input: {keyLike: \"sys\"}) { results { id key } } } } }"}'
+      | grep -q system
+  - description: Organization entity reference resolves in federation
+    manual: >
+      From another subgraph, reference an Organization by ID. Verify the
+      gateway resolves it through the IAM subgraph's __resolveReference.
+
+security_notes: |
+  - **Data isolation between organizations:** Every query that returns
+    org-scoped data MUST filter by the current user's organization
+    membership. Never return data from organizations the user does not
+    belong to. This is the most critical security boundary in a
+    multi-tenant system — a missing org filter is a data breach.
+  - **Org-scoped queries:** All database queries for tenant-scoped
+    resources must include an `organization_id` condition. Use a
+    middleware or service-level decorator to inject the org context
+    automatically rather than relying on each query to add the filter
+    manually. Defense in depth: add row-level security (RLS) policies
+    in PostgreSQL as a second enforcement layer.
+  - **Preventing cross-org data access:** The application must validate
+    that the requesting user has a membership in the target organization
+    before returning any data. This check must happen at the API layer,
+    not just the UI. Specifically:
+    - Verify org membership on every API request that accepts an orgId
+      parameter.
+    - Never trust client-supplied orgId without server-side validation.
+    - Log and alert on cross-org access attempts as potential security
+      incidents.
+  - **Protected System org:** The System organization (id=1, key="system",
+    protected=true) cannot be modified or deleted through normal API
+    operations. The sync mutation explicitly skips protected orgs via the
+    `WHERE protected = false` clause. All mutation endpoints that accept
+    an orgId must also check the protected flag and reject modifications.
+    This prevents accidental or malicious corruption of the platform's
+    root organizational context.
+  - **Keycloak as source of truth:** Organization identity (name,
+    membership) is managed in Keycloak and synced to the application
+    database. The application database is a read-optimized projection.
+    If the two diverge, Keycloak is authoritative. Sync operations must
+    be idempotent (ON CONFLICT upserts) and must never create
+    organizations that do not exist in Keycloak (except for the seeded
+    bootstrap orgs).
+  - **SQL injection prevention:** The OrganizationsService uses
+    parameterized queries (`:paramName` binding) for all user-supplied
+    input. The ILIKE patterns use string interpolation only for the
+    wildcard wrapping (`%${input}%`), which is safe because the value
+    is bound as a parameter, not concatenated into SQL. Never use string
+    concatenation for SQL query construction.
+  - **Org deletion cascading:** Deleting an organization must cascade
+    correctly: remove all memberships, reassign or archive owned
+    resources, and revoke all access tokens scoped to that org. The
+    current implementation does not have cascade logic — this must be
+    added before org deletion is enabled in production.
+  - **Audit trail:** All organization lifecycle events (create, update,
+    delete, member add/remove) should be logged with the acting
+    identity, timestamp, and before/after state. This is essential for
+    compliance and security incident investigation in multi-tenant
+    systems.
+
+touchpoints:
+  - services/iam/data/migrations/V0.0.1__create_organization.sql
+  - services/iam/data/migrations/V0.0.3__seed.sql
+  - services/iam/data/migrations/V0.0.4__add_organization_keycloak_id.sql
+  - services/iam/data/migrations/V0.0.5__add_organization_protected.sql
+  - services/iam/src/organizations/organizations.svc.ts
+  - services/iam/src/schema.ts
+  - services/iam/src/resolvers.ts
+  - apps/app/server/utils/keycloak-admin.ts
+  - apps/app/server/api/orgs/index.get.ts
+  - apps/app/server/api/orgs/index.post.ts
+  - "apps/app/server/api/orgs/[orgId].get.ts"
+  - "apps/app/server/api/orgs/[orgId].put.ts"
+  - "apps/app/server/api/orgs/[orgId].delete.ts"
+  - "apps/app/server/api/orgs/[orgId]/members.get.ts"
+  - "apps/app/server/api/orgs/[orgId]/members.post.ts"
+  - "apps/app/server/api/orgs/[orgId]/members/[memberId].delete.ts"

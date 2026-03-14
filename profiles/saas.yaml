@@ -1,0 +1,28 @@
+id: saas
+name: Multi-Tenant SaaS Platform
+ship_type: web-app
+description: >
+  A full-stack multi-tenant SaaS platform with federated GraphQL API,
+  OIDC authentication via Keycloak, organization-based tenancy, workflow
+  orchestration, change data capture, observability, and a Nuxt 3 SPA frontend.
+  Runs locally in a DevContainer with Docker Compose and Traefik.
+
+stack:
+  languages: [typescript]
+  frameworks: [moribashi, nuxt, fastify, mercurius]
+  runtime: node-22
+
+patterns:
+  - id: build.pnpm-turbo
+  - id: harness.devcontainer
+  - id: db.postgres-isolated
+  - id: api.graphql-federation
+  - id: auth.oidc-keycloak
+  - id: tenancy.org-based
+  - id: frontend.nuxt-spa
+  - id: orchestration.conductor
+  - id: cdc.debezium-kafka
+  - id: observability.grafana-stack
+  - id: storage.s3
+  - id: email.smtp
+  - id: agents.ai-conversation

@@ -1,0 +1,232 @@
+id: frontend.nuxt-spa
+version: "0.1.0"
+name: Nuxt 3 SPA Frontend
+description: >
+  Nuxt 3 single-page application with Tailwind CSS, Apollo GraphQL client, and
+  OIDC authentication via nuxt-oidc-auth. Provides a dark-themed UI shell with
+  sidebar navigation, entity CRUD page scaffolding, and server-side session
+  management. Runs behind Traefik at a configurable base URL path and connects
+  to the GraphQL federation gateway for data access.
+
+preconditions:
+  - build.pnpm-turbo
+  - auth.oidc-keycloak
+  - api.graphql-federation
+
+provides:
+  - spa-frontend
+  - graphql-client
+  - oidc-auth-frontend
+  - tailwind-dark-theme
+  - entity-page-scaffold
+
+parameters:
+  app_name:
+    type: string
+    required: true
+    description: >
+      Package name for the Nuxt app (e.g. "@aegir/app").
+  base_url:
+    type: string
+    required: false
+    default: "/app"
+    description: >
+      Base URL path under which the app is served (via Traefik path routing).
+  gateway_url:
+    type: string
+    required: false
+    default: "/api/graphql"
+    description: >
+      Public GraphQL gateway URL (relative, routed through Traefik).
+  gateway_url_internal:
+    type: string
+    required: false
+    default: "http://localhost:4000/graphql"
+    description: >
+      Server-side GraphQL gateway URL for SSR/server routes (direct,
+      bypasses Traefik).
+  oidc_client_id:
+    type: string
+    required: true
+    description: >
+      OIDC client ID registered in the identity provider (e.g. "aegir-app").
+  oidc_scopes:
+    type: string
+    required: false
+    default: "openid email profile organization"
+    description: >
+      Space-separated OIDC scopes to request.
+
+application_instructions: |
+  ## 1. Create the Nuxt app package
+
+  Under `apps/app/`, initialize a Nuxt 3 project within the pnpm workspace:
+
+  ```json
+  {
+    "name": "<app_name>",
+    "private": true,
+    "type": "module",
+    "scripts": {
+      "dev": "nuxt dev",
+      "build": "nuxt build",
+      "preview": "nuxt preview",
+      "test": "vitest run",
+      "test:watch": "vitest"
+    }
+  }
+  ```
+
+  ## 2. Install dependencies
+
+  ```bash
+  pnpm add nuxt-oidc-auth marked
+  pnpm add -D nuxt @nuxtjs/tailwindcss typescript vitest
+  ```
+
+  ## 3. Configure nuxt.config.ts
+
+  ```typescript
+  export default defineNuxtConfig({
+    modules: ['nuxt-oidc-auth', '@nuxtjs/tailwindcss'],
+    ssr: true,
+    devtools: { enabled: true },
+    app: {
+      baseURL: process.env.NUXT_APP_BASE_URL || '<base_url>',
+    },
+    runtimeConfig: {
+      gatewayUrl: process.env.GATEWAY_URL_INTERNAL || '<gateway_url_internal>',
+      public: {
+        gatewayUrl: process.env.GATEWAY_URL || '<gateway_url>',
+      },
+    },
+    oidc: {
+      defaultProvider: 'oidc',
+      providers: {
+        oidc: {
+          clientId: process.env.NUXT_OIDC_PROVIDERS_OIDC_CLIENT_ID || '',
+          clientSecret: process.env.NUXT_OIDC_PROVIDERS_OIDC_CLIENT_SECRET || '',
+          authorizationUrl: process.env.NUXT_OIDC_PROVIDERS_OIDC_AUTHORIZATION_URL || '',
+          tokenUrl: process.env.NUXT_OIDC_PROVIDERS_OIDC_TOKEN_URL || '',
+          userinfoUrl: process.env.NUXT_OIDC_PROVIDERS_OIDC_USERINFO_URL || '',
+          logoutUrl: process.env.NUXT_OIDC_PROVIDERS_OIDC_LOGOUT_URL || '',
+          redirectUri: process.env.NUXT_OIDC_PROVIDERS_OIDC_REDIRECT_URI || '',
+          scope: '<oidc_scopes>'.split(' '),
+          pkce: true,
+          state: true,
+          nonce: true,
+          exposeIdToken: true,
+          exposeAccessToken: true,
+          userNameClaim: 'email',
+        },
+      },
+      middleware: { globalMiddlewareEnabled: false },
+    },
+    compatibilityDate: '2025-01-01',
+  });
+  ```
+
+  ## 4. Set up Tailwind with dark theme
+
+  Use Tailwind's default palette directly -- no custom theme config or CSS
+  variables. Follow the dark color palette:
+
+  | Role            | Classes                                     |
+  |-----------------|---------------------------------------------|
+  | Background      | `bg-gray-900`, `bg-gray-800`, `bg-gray-950` |
+  | Text primary    | `text-gray-100`                             |
+  | Text secondary  | `text-gray-200`                             |
+  | Borders         | `border-gray-700`                           |
+  | Primary accent  | `emerald-400` / `emerald-600`               |
+  | Destructive     | `red-400` / `red-600`                       |
+
+  ## 5. Create the default layout
+
+  Create `layouts/default.vue` with a fixed sidebar (`w-64`, `bg-gray-900`)
+  and a flex-1 main content area with `p-6` padding. Active nav links use
+  `bg-gray-700 text-emerald-400`.
+
+  ## 6. Create entity page scaffolding
+
+  For each entity, create a consistent page structure:
+
+  ```
+  pages/
+    <entity>/
+      index.vue    # List view
+      [id].vue     # Detail / edit view
+      new.vue      # Create form
+  ```
+
+  ## 7. Set OIDC environment variables
+
+  Add all `NUXT_OIDC_*` variables to the dev container's environment block in
+  `docker-compose.yml`. See the `auth.oidc-keycloak` pattern for the full
+  list. Generate deterministic session secrets for local dev and use
+  cryptographically random values in production.
+
+  ## 8. Add Traefik route
+
+  In `.devcontainer/traefik/dynamic.yml`, add a router for the app:
+
+  ```yaml
+  app:
+    rule: "PathPrefix(`<base_url>`)"
+    service: app
+    entryPoints: [web]
+  ```
+
+test_criteria:
+  - description: Nuxt dev server starts without errors
+    command: "cd /workspace/apps/app && pnpm dev --port 3000 &; sleep 5 && curl -sf -o /dev/null http://localhost:3000/app/"
+  - description: App is reachable through Traefik at the configured base URL
+    command: "curl -sf -o /dev/null -w '%{http_code}' http://localhost:7356/app/ | grep -qE '(200|302)'"
+  - description: OIDC login flow redirects to the identity provider
+    manual: >
+      Navigate to a protected page and verify the browser redirects to the
+      Keycloak login form. After login, confirm the user is redirected back
+      to the app with a valid session.
+  - description: GraphQL queries return data from the federation gateway
+    manual: >
+      Open a page that fetches data via Apollo and verify the GraphQL query
+      succeeds and data renders correctly.
+  - description: Unit tests pass
+    command: "cd /workspace/apps/app && pnpm test"
+
+security_notes: |
+  - **No tokens in localStorage:** OIDC tokens (access, refresh, ID) are
+    managed server-side by nuxt-oidc-auth via encrypted HTTP-only cookies.
+    Tokens must never be stored in localStorage or sessionStorage, as these
+    are accessible to any JavaScript running on the page (XSS risk).
+  - **PKCE is mandatory:** The OIDC flow uses PKCE (Proof Key for Code
+    Exchange) to prevent authorization code interception attacks. The
+    `pkce: true` setting must remain enabled and must not be disabled.
+  - **CSP headers:** Configure Content-Security-Policy headers to restrict
+    script sources (`script-src 'self'`), prevent inline scripts where
+    possible, and block framing (`frame-ancestors 'none'`). Nuxt's
+    `security` module or Traefik middleware can enforce these.
+  - **XSS prevention via Vue template escaping:** Vue's template syntax
+    (`{{ }}`) auto-escapes HTML by default. Never use `v-html` with
+    user-supplied content. If rendering markdown or rich text, sanitize
+    with a library like DOMPurify before rendering.
+  - **CORS with credentials:** The GraphQL gateway must be configured to
+    accept credentials (cookies) only from the app's origin. Set
+    `Access-Control-Allow-Origin` to the specific origin (never `*` when
+    credentials are involved) and `Access-Control-Allow-Credentials: true`.
+  - **Session secret rotation:** The `NUXT_OIDC_TOKEN_KEY`,
+    `NUXT_OIDC_SESSION_SECRET`, and `NUXT_OIDC_AUTH_SESSION_SECRET` values
+    must be cryptographically random in production (minimum 32 bytes). Plan
+    for secret rotation without invalidating all active sessions (e.g.
+    support multiple active keys during rotation).
+  - **Secure cookie attributes:** Session cookies must be set with `Secure`,
+    `HttpOnly`, and `SameSite=Lax` (or `Strict`) attributes in production.
+    The `Secure` flag is automatically enforced when served over HTTPS.
+
+touchpoints:
+  - apps/app/package.json
+  - apps/app/nuxt.config.ts
+  - apps/app/layouts/default.vue
+  - apps/app/pages/
+  - apps/app/tailwind.config.ts
+  - .devcontainer/docker-compose.yml
+  - .devcontainer/traefik/dynamic.yml

@@ -1,0 +1,263 @@
+id: auth.oidc-keycloak
+version: "0.1.0"
+name: Keycloak OIDC Authentication with Org-Based Identity
+description: >
+  Configures Keycloak as the OpenID Connect identity provider with a
+  "global" realm, Google social login, OIDC client registration, and a
+  service account for the Keycloak Admin REST API. The app integrates via
+  nuxt-oidc-auth for the Authorization Code flow with PKCE. Session
+  management uses encrypted server-side sessions with configurable token,
+  session, and auth-session secrets. Includes a Keycloak Admin API helper
+  for server-side user and organization management using client_credentials
+  grants. Keycloak is provisioned via Terraform (OpenTofu) with the
+  mrparkers/keycloak provider.
+
+preconditions:
+  - harness.devcontainer
+
+provides:
+  - auth.oidc
+  - auth.keycloak-realm
+  - auth.keycloak-client
+  - auth.keycloak-admin-api
+  - auth.session-management
+  - auth.social-login.google
+
+parameters:
+  realm_name:
+    type: string
+    required: false
+    default: global
+    description: >
+      Keycloak realm name. The "global" realm is the single realm that all
+      users and organizations belong to.
+  app_client_id:
+    type: string
+    required: false
+    default: aegir-app
+    description: >
+      OIDC client ID for the user-facing application.
+  admin_api_client_id:
+    type: string
+    required: false
+    default: aegir-admin-api
+    description: >
+      Client ID for the service account used to call the Keycloak Admin
+      REST API (client_credentials grant).
+  keycloak_base_path:
+    type: string
+    required: false
+    default: /infra/idp
+    description: >
+      HTTP relative path for Keycloak (--http-relative-path). Used in
+      Traefik routing and all OIDC endpoint URLs.
+  keycloak_version:
+    type: string
+    required: false
+    default: "26.5"
+    description: >
+      Keycloak Docker image version tag.
+
+application_instructions: |
+  ## 1. Keycloak Docker Compose service
+
+  Add the Keycloak service to `.devcontainer/docker-compose.yml`:
+
+  ```yaml
+  keycloak:
+    image: quay.io/keycloak/keycloak:<keycloak_version>
+    command:
+      - start-dev
+      - --http-relative-path=<keycloak_base_path>
+      - --cache=ispn
+      - --features=preview,admin-fine-grained-authz,token-exchange,impersonation
+      - --hostname-strict=false
+      - --health-enabled=true
+    environment:
+      KC_DB: postgres
+      KC_DB_URL: jdbc:postgresql://postgres:5432/keycloak
+      KC_DB_USERNAME: keycloak
+      KC_DB_PASSWORD: keycloak_dev
+      KC_HTTP_ENABLED: "true"
+      KC_BOOTSTRAP_ADMIN_USERNAME: admin
+      KC_BOOTSTRAP_ADMIN_PASSWORD: admin
+      KC_PROXY: edge
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "{ printf 'HEAD <keycloak_base_path>/health/ready HTTP/1.0\\r\\n\\r\\n' >&0; grep 'HTTP/1.0 200'; } 0<>/dev/tcp/localhost/8080"]
+      interval: 10s
+      timeout: 20s
+      retries: 5
+  ```
+
+  ## 2. Keycloak Terraform module
+
+  Create `infra/local/tf/modules/keycloak/main.tf` with:
+
+  - **Realm** (`keycloak_realm.global`): Organizations enabled, email-as-username,
+    verify email, remember me, reset password allowed. SMTP configured for
+    local MailHog.
+  - **Google IdP** (`keycloak_oidc_google_identity_provider.google`): Social
+    login with `openid email profile` scopes, sync mode IMPORT, trust email.
+  - **App OIDC client** (`keycloak_openid_client.app`): CONFIDENTIAL access
+    type, standard flow only (no implicit, no direct access grants). Valid
+    redirect URIs scoped to the app callback path. Default scopes: openid,
+    email, profile, basic.
+  - **Admin API service account** (`keycloak_openid_client.admin_api`):
+    CONFIDENTIAL, service_accounts_enabled. Granted realm-management roles:
+    manage-users, view-users, manage-realm.
+
+  Create `variables.tf` for google_client_id, google_client_secret,
+  app_client_secret, admin_api_client_secret, smtp_*, redirect URIs.
+
+  Create `outputs.tf` exposing realm_id, client IDs, and (sensitive) secrets.
+
+  ## 3. OIDC environment variables for the app
+
+  Add to the dev container's environment in docker-compose.yml:
+
+  ```
+  NUXT_OIDC_PROVIDERS_OIDC_CLIENT_ID: <app_client_id>
+  NUXT_OIDC_PROVIDERS_OIDC_CLIENT_SECRET: "<secret>"
+  NUXT_OIDC_PROVIDERS_OIDC_AUTHORIZATION_URL: http://localhost:<port><keycloak_base_path>/realms/<realm>/protocol/openid-connect/auth
+  NUXT_OIDC_PROVIDERS_OIDC_TOKEN_URL: http://keycloak:8080<keycloak_base_path>/realms/<realm>/protocol/openid-connect/token
+  NUXT_OIDC_PROVIDERS_OIDC_USERINFO_URL: http://keycloak:8080<keycloak_base_path>/realms/<realm>/protocol/openid-connect/userinfo
+  NUXT_OIDC_PROVIDERS_OIDC_LOGOUT_URL: http://localhost:<port><keycloak_base_path>/realms/<realm>/protocol/openid-connect/logout
+  NUXT_OIDC_PROVIDERS_OIDC_REDIRECT_URI: http://localhost:<port>/app/auth/oidc/callback
+  NUXT_OIDC_PROVIDERS_OIDC_OPENID_CONFIGURATION: http://keycloak:8080<keycloak_base_path>/realms/<realm>/.well-known/openid-configuration
+  ```
+
+  Note the split between browser-facing URLs (via localhost + Traefik) and
+  server-side URLs (via Docker DNS `keycloak:8080`).
+
+  ## 4. Session encryption secrets
+
+  Add three session secrets to the dev container environment:
+
+  - `NUXT_OIDC_TOKEN_KEY` — 32-byte base64 key for AES-256-GCM token encryption
+  - `NUXT_OIDC_SESSION_SECRET` — 48+ char base64url string for session signing
+  - `NUXT_OIDC_AUTH_SESSION_SECRET` — 48+ char base64url string for auth session signing
+
+  For local dev, derive deterministically from known seeds. For production,
+  generate with `crypto.randomBytes(32).toString('base64')`.
+
+  ## 5. Keycloak Admin API helper
+
+  Create `server/utils/keycloak-admin.ts` with:
+
+  - `getServiceAccountToken()` — acquires a client_credentials access token
+    from the admin API client, cached until 60s before expiry.
+  - `kcAdmin<T>(path, options)` — authenticated GET/POST/PUT/DELETE against
+    the Keycloak Admin REST API at `/admin/realms/<realm><path>`.
+  - `kcAdminRaw(path, options)` — raw fetch variant for responses needing
+    Location headers or status codes.
+
+  ## 6. Session hydration utility
+
+  Create `server/utils/session.ts` wrapping `nuxt-oidc-auth`'s
+  `getUserSession`. Decode the JWT access token to extract claims, resolve
+  the Keycloak user ID (falling back to email lookup via kcAdmin for
+  lightweight tokens), and populate `session.userInfo` with sub, email,
+  and name.
+
+  ## 7. Traefik routing
+
+  Add a Traefik route for `<keycloak_base_path>` pointing to `keycloak:8080`.
+  Keycloak is path-aware so no strip-prefix middleware is needed.
+
+  ## 8. Apply Terraform
+
+  ```bash
+  cd /workspace/infra/local/tf
+  tofu init
+  tofu apply
+  ```
+
+test_criteria:
+  - description: Keycloak health endpoint responds through Traefik
+    command: "curl -sf http://localhost:7356/infra/idp/health/ready | grep -q UP"
+  - description: OIDC discovery endpoint returns valid configuration
+    command: >
+      curl -sf http://localhost:7356/infra/idp/realms/global/.well-known/openid-configuration
+      | grep -q authorization_endpoint
+  - description: App OIDC client exists in Keycloak
+    command: >
+      cd /workspace/infra/local/tf && tofu state show module.keycloak.keycloak_openid_client.app
+      | grep -q aegir-app
+  - description: Admin API service account can acquire a token
+    command: >
+      curl -sf -X POST
+      http://keycloak:8080/infra/idp/realms/global/protocol/openid-connect/token
+      -d 'grant_type=client_credentials&client_id=aegir-admin-api&client_secret=aegir-local-dev-admin-api-secret'
+      | grep -q access_token
+  - description: Login flow redirects to Keycloak and back to app callback
+    manual: >
+      Navigate to the app in a browser. Click login. Verify redirect to
+      Keycloak login page. Authenticate (via Google or local user). Verify
+      redirect back to /app/auth/oidc/callback and successful session creation.
+  - description: Session secrets are configured and sessions are encrypted
+    manual: >
+      After login, inspect the session cookie. Verify it is httpOnly, secure
+      (in production), and SameSite=Lax. Verify the session content is
+      encrypted (not readable as plaintext).
+
+security_notes: |
+  - **Authorization Code flow only (no implicit):** The app OIDC client uses
+    `standard_flow_enabled = true` with `implicit_flow_enabled = false` and
+    `direct_access_grants_enabled = false`. This ensures tokens are never
+    exposed in browser URLs or query parameters. The Authorization Code flow
+    with a confidential client is the most secure browser-based OIDC flow.
+  - **PKCE (Proof Key for Code Exchange):** nuxt-oidc-auth supports PKCE
+    by default. PKCE prevents authorization code interception attacks even
+    if the code is leaked (e.g. via browser history or referrer headers).
+    Ensure PKCE is not disabled in the OIDC provider configuration.
+  - **Token validation:** Access tokens from Keycloak are JWTs. The app
+    decodes the token payload for claims extraction but does NOT perform
+    full signature verification server-side (it relies on the token having
+    been obtained via a confidential client_credentials exchange). For
+    production, add JWT signature verification using the realm's JWKS
+    endpoint to prevent token forgery.
+  - **Session management:** Sessions are encrypted server-side using
+    AES-256-GCM (NUXT_OIDC_TOKEN_KEY) and signed with separate session
+    secrets. Session cookies must be set with: httpOnly (prevents XSS
+    access), secure (HTTPS only in production), SameSite=Lax (CSRF
+    protection), and a reasonable maxAge. Never store raw tokens in
+    client-accessible cookies.
+  - **Session secret rotation:** The three session secrets
+    (NUXT_OIDC_TOKEN_KEY, NUXT_OIDC_SESSION_SECRET,
+    NUXT_OIDC_AUTH_SESSION_SECRET) must be unique per environment and
+    rotated periodically. The local dev values are deterministic and
+    derived from known seeds — these MUST be replaced with
+    cryptographically random values in production.
+  - **CORS configuration:** The gateway uses `origin: true` (reflect
+    origin) for CORS, which is permissive. In production, restrict
+    `origin` to the specific app domain(s). The Keycloak client's
+    `web_origins = ["+"]` allows CORS from all valid redirect URIs —
+    tighten this to explicit origins in production.
+  - **Service account least privilege:** The admin API service account
+    has manage-users, view-users, and manage-realm roles. These are
+    broad permissions. In production, consider creating custom roles
+    with only the specific permissions needed (e.g. only org management
+    and user lookup, not full realm management).
+  - **Token caching:** The Keycloak Admin API helper caches service
+    account tokens until 60 seconds before expiry. Ensure the cached
+    token is not shared across requests in a way that could leak between
+    tenants or user contexts. The token represents the service account,
+    not any end user.
+  - **Keycloak admin credentials:** The bootstrap admin (admin/admin) is
+    for local development only. In production, use a strong password or
+    disable the bootstrap admin entirely after initial setup. Never
+    expose the Keycloak admin console to the public internet.
+
+touchpoints:
+  - .devcontainer/docker-compose.yml
+  - infra/local/tf/modules/keycloak/main.tf
+  - infra/local/tf/modules/keycloak/variables.tf
+  - infra/local/tf/modules/keycloak/outputs.tf
+  - infra/local/tf/main.tf
+  - infra/local/tf/variables.tf
+  - apps/app/server/utils/keycloak-admin.ts
+  - apps/app/server/utils/session.ts
+  - .devcontainer/traefik/dynamic.yml

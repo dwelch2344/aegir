@@ -1,0 +1,164 @@
+id: storage.s3
+version: "0.1.0"
+name: S3-Compatible Object Storage
+description: >
+  S3-compatible object storage using MinIO for local development, swappable to
+  AWS S3 in production. Provides a configured S3 client, bucket initialization,
+  and presigned URL generation. Locally, MinIO runs as a Docker Compose service
+  with the S3 API on port 9000 and the admin console on port 9001.
+
+preconditions:
+  - harness.devcontainer
+
+provides:
+  - object-storage
+  - presigned-urls
+  - s3-client
+
+parameters:
+  bucket_name:
+    type: string
+    required: true
+    description: >
+      Default bucket name to create on init (e.g. "aegir-docs").
+  s3_endpoint:
+    type: string
+    required: false
+    default: "http://minio:9000"
+    description: >
+      S3 endpoint URL. Points to MinIO in local dev; omit or set to the
+      regional AWS endpoint in production.
+  access_key:
+    type: string
+    required: false
+    default: "minioadmin"
+    description: >
+      S3 access key. Uses MinIO root credentials locally; use IAM role
+      credentials in production.
+  secret_key:
+    type: string
+    required: false
+    default: "minioadmin"
+    description: >
+      S3 secret key. Uses MinIO root credentials locally; use IAM role
+      credentials in production.
+  presigned_url_expiry:
+    type: number
+    required: false
+    default: 3600
+    description: >
+      Default expiry time in seconds for presigned URLs.
+
+application_instructions: |
+  ## 1. Verify MinIO is running
+
+  The `harness.devcontainer` pattern already includes a MinIO service in
+  `docker-compose.yml`. Confirm the service is present and healthy:
+
+  ```yaml
+  minio:
+    image: minio/minio:latest
+    environment:
+      MINIO_ROOT_USER: minioadmin
+      MINIO_ROOT_PASSWORD: minioadmin
+    command: server /data --console-address ":9001"
+    volumes:
+      - ./data/s3:/data
+    healthcheck:
+      test: ["CMD", "mc", "ready", "local"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+  ```
+
+  ## 2. Set environment variables
+
+  Add these to the dev container's `environment` block in `docker-compose.yml`:
+
+  ```yaml
+  S3_ENDPOINT: http://minio:9000
+  S3_ACCESS_KEY: minioadmin
+  S3_SECRET_KEY: minioadmin
+  S3_BUCKET: <bucket_name>
+  ```
+
+  ## 3. Install the AWS SDK S3 client
+
+  In the service package that needs S3 access:
+
+  ```bash
+  pnpm add @aws-sdk/client-s3 @aws-sdk/s3-request-presigner
+  ```
+
+  ## 4. Create an S3 utility module
+
+  Create a module that exports a configured S3 client and helper functions:
+
+  ```typescript
+  import { S3Client, CreateBucketCommand, HeadBucketCommand } from '@aws-sdk/client-s3';
+  import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
+
+  const s3 = new S3Client({
+    endpoint: process.env.S3_ENDPOINT,
+    region: 'us-east-1',
+    forcePathStyle: true, // Required for MinIO
+    credentials: {
+      accessKeyId: process.env.S3_ACCESS_KEY!,
+      secretAccessKey: process.env.S3_SECRET_KEY!,
+    },
+  });
+  ```
+
+  ## 5. Add bucket initialization to the init script
+
+  In `scripts/init.sh`, add an idempotent bucket creation step that uses the
+  MinIO `mc` CLI inside the MinIO container:
+
+  ```bash
+  docker exec aegir-minio mc alias set local http://localhost:9000 minioadmin minioadmin
+  docker exec aegir-minio mc mb --ignore-existing local/<bucket_name>
+  ```
+
+  ## 6. Production swap
+
+  In production, remove `S3_ENDPOINT` and `forcePathStyle`, and provide IAM
+  role credentials via the standard AWS credential chain. No code changes
+  required -- the AWS SDK automatically uses the default credential provider.
+
+test_criteria:
+  - description: MinIO service is healthy and accepting connections
+    command: "docker exec aegir-minio mc ready local"
+  - description: Default bucket exists after init
+    command: >-
+      docker exec aegir-minio mc ls local/ | grep -q '<bucket_name>'
+  - description: S3 client can upload and retrieve an object
+    manual: >
+      Upload a test file via the S3 client, then retrieve it and verify the
+      content matches. Confirm the object appears in the MinIO console at
+      http://localhost:7356/infra/minio.
+
+security_notes: |
+  - **No public buckets by default:** All buckets are created with private
+    access policies. Public read access must be explicitly configured per
+    bucket and requires documented justification.
+  - **Presigned URL expiration:** Presigned URLs must have a bounded TTL
+    (default 3600s). Never generate presigned URLs with no expiry or
+    excessively long durations. Audit presigned URL generation for
+    appropriate expiry values.
+  - **Bucket policies:** In production, apply least-privilege bucket policies.
+    Service IAM roles should only have access to the specific buckets and
+    prefixes they need (e.g. `s3:GetObject` on `arn:aws:s3:::bucket/prefix/*`).
+  - **IAM-based access in production:** Local dev uses static MinIO root
+    credentials for simplicity. Production must use IAM roles (instance
+    profiles, EKS IRSA, or equivalent) -- never embed long-lived access keys
+    in application config or environment variables.
+  - **Encryption at rest:** Enable SSE-S3 or SSE-KMS on production buckets.
+    MinIO supports server-side encryption if needed for local testing.
+  - **No sensitive data in object keys:** S3 object keys appear in access logs
+    and CloudTrail. Do not encode PII or secrets in key names.
+
+touchpoints:
+  - .devcontainer/docker-compose.yml
+  - scripts/init.sh
+  - "services/<service_name>/package.json"
+  - "services/<service_name>/src/lib/s3.ts"

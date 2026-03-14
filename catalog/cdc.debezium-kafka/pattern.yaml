@@ -1,0 +1,241 @@
+id: cdc.debezium-kafka
+version: "0.1.0"
+name: Change Data Capture Pipeline (Debezium + Redpanda + Avro)
+description: >
+  A Change Data Capture pipeline that streams PostgreSQL WAL changes through
+  Debezium into Redpanda (Kafka-compatible), normalizes raw CDC events into
+  typed Avro records, and sinks them into downstream PostgreSQL tables. The
+  pipeline has three stages: (1) Debezium connector captures row-level changes
+  from PostgreSQL's logical replication WAL and publishes raw JSON events to
+  Redpanda topics, (2) a CDC processor service consumes raw events, normalizes
+  them into WorkflowEvent and TaskEvent Avro records using the Confluent wire
+  format, and publishes to normalized topics, (3) sink consumers read the
+  normalized Avro events and upsert them into dedicated PostgreSQL tables for
+  querying. Schema validation is enforced via Redpanda's built-in Schema
+  Registry using Avro.
+
+preconditions:
+  - harness.devcontainer
+  - db.postgres-isolated
+
+provides:
+  - change-data-capture
+  - event-streaming
+  - avro-schema-validation
+  - cdc-sink-tables
+  - debezium-connector-management
+  - schema-registry-integration
+
+parameters:
+  kafkaBrokers:
+    type: string
+    required: true
+    default: redpanda:29092
+    description: >
+      Comma-separated list of Kafka/Redpanda broker addresses. Uses the
+      internal Docker DNS name in the devcontainer stack.
+  schemaRegistryUrl:
+    type: string
+    required: true
+    default: http://redpanda:8083
+    description: >
+      URL of the Confluent-compatible Schema Registry (Redpanda's built-in
+      registry in the devcontainer stack).
+  cdcDatabaseUrl:
+    type: string
+    required: true
+    description: >
+      PostgreSQL connection string for the CDC sink database where normalized
+      events are persisted (e.g., postgresql://aegir:aegir_dev@postgres:5432/conductor_cdc).
+  debeziumUrl:
+    type: string
+    required: false
+    default: http://debezium-connect:8083
+    description: >
+      URL of the Debezium Connect REST API for connector registration and
+      status checks.
+  topicPrefix:
+    type: string
+    required: false
+    default: conductor.cdc
+    description: >
+      Debezium topic prefix. Raw CDC events are published to
+      {topicPrefix}.public.{table_name}.
+  consumerGroupId:
+    type: string
+    required: false
+    default: conductor-cdc-normalizer
+    description: >
+      Kafka consumer group ID for the CDC processor service.
+  cdcPort:
+    type: number
+    required: false
+    default: 4020
+    description: >
+      Port the CDC processor Fastify service listens on.
+
+application_instructions: |
+  ## 1. Enable PostgreSQL logical replication
+
+  The source PostgreSQL instance must have WAL logical replication enabled.
+  In docker-compose, pass these flags to the postgres command:
+
+  ```yaml
+  command: postgres -c wal_level=logical -c max_replication_slots=4 -c max_wal_senders=4
+  ```
+
+  Create a replication-enabled init script that grants the Debezium user
+  replication privileges and configures `pg_hba.conf` for replication access.
+
+  ## 2. Create the CDC processor service package
+
+  Create `services/conductor-cdc/` with the following structure:
+
+  ```
+  services/conductor-cdc/
+    package.json
+    src/
+      index.ts              # Entry point
+      app.ts                # Fastify app with startup pipeline
+      kafka.ts              # Kafka client, topic constants, topic creation
+      schema-registry.ts    # Avro schema registration, wire format encode/decode
+      schemas.ts            # Avro type definitions (avsc)
+      normalizer.ts         # Raw Debezium event → typed event normalization
+      cdc-processor.ts      # Consumer/producer pipeline: consume → normalize → encode → publish
+      debezium.ts           # Debezium connector registration and status
+      sink.ts               # Sink consumer: Avro events → PostgreSQL upserts
+  ```
+
+  Dependencies: `@aegir/common`, `fastify`, `kafkajs`, `avsc`, `pg`.
+
+  ## 3. Define Avro schemas (`schemas.ts`)
+
+  Define Avro record types using the `avsc` library for each event type.
+  Each schema must have a namespace (e.g., `com.aegir.conductor.cdc`) and
+  typed fields including enums for event_type (CREATE, UPDATE, DELETE),
+  nullable fields using Avro unions (`['null', 'string']`), and timestamp
+  fields as `long`.
+
+  ## 4. Implement the normalizer (`normalizer.ts`)
+
+  Parse raw Debezium CDC payloads which contain `op` (c/u/d/r), `before`,
+  and `after` fields. Map the Debezium operation code to the event type
+  enum. Extract data from `json_data` columns (Conductor stores data as
+  JSON blobs) or fall back to direct column extraction.
+
+  ## 5. Implement the CDC processor pipeline (`cdc-processor.ts`)
+
+  1. Register Avro schemas with the Schema Registry
+  2. Subscribe to raw Debezium topics matching `{topicPrefix}.public.*`
+  3. For each message, determine the source table from the topic name
+  4. Normalize the raw event using the appropriate normalizer function
+  5. Encode the normalized event as Avro with the Confluent wire format
+     (magic byte 0x00 + 4-byte schema ID + Avro bytes)
+  6. Publish to the normalized topic with the entity ID as the message key
+
+  ## 6. Implement the Debezium connector registration (`debezium.ts`)
+
+  On startup, register (or update) a PostgreSQL connector with Debezium
+  Connect via its REST API. The connector config must specify:
+
+  - `connector.class`: `io.debezium.connector.postgresql.PostgresConnector`
+  - `plugin.name`: `pgoutput`
+  - `topic.prefix`: the configured prefix
+  - `slot.name`: a stable replication slot name
+  - `heartbeat.interval.ms`: keep the replication slot active
+  - JSON key/value converters (no schemas, raw JSON)
+
+  ## 7. Implement sink consumers (`sink.ts`)
+
+  Consume from normalized Avro topics, decode the Confluent wire format,
+  deserialize with the Avro schema, and upsert into PostgreSQL tables.
+  Use `INSERT ... ON CONFLICT DO UPDATE` for idempotent writes.
+
+  ## 8. Wire up the startup pipeline (`app.ts`)
+
+  Execute in order:
+  1. Ensure normalized Kafka topics exist
+  2. Register Avro schemas with Schema Registry
+  3. Register the Debezium connector (retry until Connect is ready)
+  4. Initialize sink database tables
+  5. Start the CDC processor
+  6. Start sink consumers
+  7. Listen on the configured port
+
+  ## 9. Add docker-compose services
+
+  Ensure these services are defined in docker-compose:
+
+  - `redpanda` — Kafka-compatible broker with Schema Registry on port 8083
+  - `debezium-connect` — Debezium Connect with JSON converters
+
+  Set these environment variables on the dev container:
+
+  ```yaml
+  KAFKA_BROKERS: redpanda:29092
+  SCHEMA_REGISTRY_URL: http://redpanda:8083
+  CDC_DATABASE_URL: postgresql://aegir:aegir_dev@postgres:5432/conductor_cdc
+  ```
+
+test_criteria:
+  - description: Redpanda broker is healthy
+    command: >-
+      docker exec aegir-redpanda-1 rpk cluster health
+      --api-urls localhost:9644 | grep -q 'Healthy.*true'
+  - description: Debezium Connect is running
+    command: curl -sf http://debezium-connect:8083/ | grep -q 'version'
+  - description: Debezium connector is registered and running
+    command: >-
+      curl -sf http://debezium-connect:8083/connectors/conductor-postgres-cdc/status
+      | grep -q 'RUNNING'
+  - description: Avro schemas are registered in Schema Registry
+    command: >-
+      curl -sf http://redpanda:8083/subjects | grep -q 'conductor.workflow.events-value'
+  - description: Normalized topics exist in Redpanda
+    command: >-
+      docker exec aegir-redpanda-1 rpk topic list | grep -q 'conductor.workflow.events'
+  - description: CDC processor health endpoint responds
+    command: curl -sf http://localhost:4020/health | grep -q 'ok'
+  - description: Unit tests pass
+    command: cd /workspace/services/conductor-cdc && pnpm test
+
+security_notes: |
+  - **WAL access permissions:** The Debezium database user requires the
+    REPLICATION privilege and must be listed in `pg_hba.conf` for
+    replication connections. This user can read the entire WAL stream for
+    the configured database. Limit the Debezium user to only the databases
+    it needs to capture, and use `schema.include.list` to restrict which
+    schemas are captured.
+  - **Avro schema validation prevents malformed events:** All events
+    published to normalized topics are serialized through Avro schemas
+    registered in the Schema Registry. Consumers that deserialize with the
+    same schema will reject any message that does not conform. This
+    prevents corrupted or tampered events from propagating downstream.
+  - **Topic ACLs:** In production, configure Redpanda/Kafka ACLs to
+    restrict which services can produce to and consume from each topic.
+    The CDC processor should be the only producer for normalized event
+    topics. Raw Debezium topics should not be consumed by application
+    services directly.
+  - **No secrets in connector config:** The Debezium connector config
+    contains database credentials in plaintext. In production, use
+    Kafka Connect's external secrets support or inject credentials via
+    environment variable interpolation rather than hardcoding them.
+  - **Replication slot lifecycle:** Debezium creates a PostgreSQL
+    replication slot that retains WAL segments until consumed. If the
+    connector is down for an extended period, WAL accumulation can fill
+    the disk. Monitor replication slot lag and set up alerts for stale
+    slots.
+
+touchpoints:
+  - services/conductor-cdc/package.json
+  - services/conductor-cdc/src/index.ts
+  - services/conductor-cdc/src/app.ts
+  - services/conductor-cdc/src/kafka.ts
+  - services/conductor-cdc/src/schema-registry.ts
+  - services/conductor-cdc/src/schemas.ts
+  - services/conductor-cdc/src/normalizer.ts
+  - services/conductor-cdc/src/cdc-processor.ts
+  - services/conductor-cdc/src/debezium.ts
+  - services/conductor-cdc/src/sink.ts
+  - .devcontainer/docker-compose.yml
+  - .devcontainer/postgres/01-enable-replication.sh

@@ -1,0 +1,163 @@
+id: email.smtp
+version: "0.1.0"
+name: SMTP Email with Local Capture
+description: >
+  SMTP email sending with MailHog for local development, swappable to AWS SES
+  or SendGrid in production. MailHog captures all outbound email in dev,
+  preventing accidental delivery to real addresses while providing a web UI
+  for inspection. The pattern uses nodemailer as the transport abstraction.
+
+preconditions:
+  - harness.devcontainer
+
+provides:
+  - email-sending
+  - email-templates
+  - email-capture-dev
+
+parameters:
+  smtp_host:
+    type: string
+    required: false
+    default: "mailhog"
+    description: >
+      SMTP server hostname. Points to MailHog in local dev.
+  smtp_port:
+    type: number
+    required: false
+    default: 1025
+    description: >
+      SMTP server port. MailHog listens on 1025 (no TLS).
+  from_address:
+    type: string
+    required: true
+    description: >
+      Default sender email address (e.g. "noreply@example.com").
+  from_name:
+    type: string
+    required: false
+    default: "App"
+    description: >
+      Display name for the sender.
+
+application_instructions: |
+  ## 1. Verify MailHog is running
+
+  The `harness.devcontainer` pattern already includes a MailHog service in
+  `docker-compose.yml`:
+
+  ```yaml
+  mailhog:
+    image: mailhog/mailhog:latest
+    restart: unless-stopped
+  ```
+
+  MailHog exposes SMTP on port 1025 and a web UI on port 8025 (accessible
+  via Traefik at `/infra/mailhog`).
+
+  ## 2. Set environment variables
+
+  Add these to the dev container's `environment` block in `docker-compose.yml`:
+
+  ```yaml
+  SMTP_HOST: mailhog
+  SMTP_PORT: "1025"
+  SMTP_SECURE: "false"
+  SMTP_FROM_ADDRESS: <from_address>
+  SMTP_FROM_NAME: <from_name>
+  ```
+
+  ## 3. Install nodemailer
+
+  In the service package that sends email:
+
+  ```bash
+  pnpm add nodemailer
+  pnpm add -D @types/nodemailer
+  ```
+
+  ## 4. Create an email utility module
+
+  ```typescript
+  import { createTransport, type Transporter } from 'nodemailer';
+
+  const transport: Transporter = createTransport({
+    host: process.env.SMTP_HOST,
+    port: Number(process.env.SMTP_PORT),
+    secure: process.env.SMTP_SECURE === 'true',
+    // Auth is optional for MailHog; required for SES/SendGrid
+    ...(process.env.SMTP_USER && {
+      auth: {
+        user: process.env.SMTP_USER,
+        pass: process.env.SMTP_PASS,
+      },
+    }),
+  });
+
+  export async function sendEmail(options: {
+    to: string;
+    subject: string;
+    html: string;
+  }) {
+    return transport.sendMail({
+      from: `"${process.env.SMTP_FROM_NAME}" <${process.env.SMTP_FROM_ADDRESS}>`,
+      ...options,
+    });
+  }
+  ```
+
+  ## 5. Production swap
+
+  For production, update environment variables to point to SES or SendGrid:
+
+  ```yaml
+  SMTP_HOST: email-smtp.us-east-1.amazonaws.com  # SES
+  SMTP_PORT: "587"
+  SMTP_SECURE: "true"
+  SMTP_USER: <iam-smtp-user>
+  SMTP_PASS: <iam-smtp-password>
+  ```
+
+  No code changes required -- the same nodemailer transport works with any
+  SMTP-compatible provider.
+
+test_criteria:
+  - description: MailHog is running and accepting SMTP connections
+    command: >-
+      docker exec aegir-dev sh -c
+      'echo "QUIT" | nc -w2 mailhog 1025 | grep -q "220"'
+  - description: Sent email appears in MailHog web UI
+    manual: >
+      Send a test email using the sendEmail function and verify it appears in
+      the MailHog web UI at http://localhost:7356/infra/mailhog.
+  - description: No email is delivered to external addresses in dev
+    manual: >
+      Send an email to an external address and confirm it is captured by
+      MailHog and never leaves the local network.
+
+security_notes: |
+  - **No real email sending in dev:** MailHog captures all outbound SMTP
+    traffic. It does not relay to external mail servers, preventing
+    accidental delivery of test emails to real users.
+  - **SPF/DKIM/DMARC in production:** The production sending domain must have
+    SPF, DKIM, and DMARC DNS records configured. Without these, emails will
+    be flagged as spam or rejected. Verify DNS records before going live.
+  - **Email template injection prevention:** Never interpolate user-supplied
+    content directly into email headers (To, From, Subject, CC, BCC).
+    Sanitize all dynamic content in email bodies to prevent HTML injection
+    and phishing via crafted content.
+  - **Rate limiting:** Implement rate limiting on email-sending endpoints to
+    prevent abuse (e.g. password reset floods, notification spam). SES and
+    SendGrid impose their own rate limits; add application-level limits as
+    a defense-in-depth measure.
+  - **SMTP credentials in production:** Store SMTP username and password in a
+    secret manager (AWS Secrets Manager, Vault, etc.). Never commit SMTP
+    credentials to version control or embed them in container images.
+  - **TLS in production:** Always set `SMTP_SECURE=true` or use STARTTLS
+    (port 587) in production. Never send credentials or email content over
+    unencrypted SMTP in non-local environments.
+
+touchpoints:
+  - .devcontainer/docker-compose.yml
+  - "services/<service_name>/package.json"
+  - "services/<service_name>/src/lib/email.ts"

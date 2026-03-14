@@ -9,6 +9,7 @@
   "updateRemoteUserUID": true,
   "mounts": [
     "source=../,target=//workspace,type=bind",
+    "source=../../,target=//projects,type=bind",
     "source=${localEnv:HOME}/.devcontainers/mount/aegir/secrets,target=/home/node/.secrets,type=bind",
     "source=${localEnv:HOME}/.devcontainers/mount/aegir/claude,target=/home/node/.claude,type=bind",
     "source=${localEnv:HOME}/.ssh,target=/home/node/.ssh,type=bind",

@@ -1,0 +1,400 @@
+id: service.domain-subgraph
+version: "0.1.0"
+name: Federated Domain Service (12-Step Recipe)
+description: >
+  Adds a new federated GraphQL subgraph service to a ship. This is the
+  primary pattern for extending a platform — each domain bounded context
+  gets its own service with schema-isolated Postgres, Flyway migrations,
+  DI-scanned service classes, federation-aware resolvers, and Moribashi
+  namespace-prefixed GraphQL types. The service auto-registers with the
+  gateway and is routable via Traefik. This is the single highest-value
+  automation target in the Shipyard: the 12-step recipe that developers
+  repeat most frequently.
+
+preconditions:
+  - api.graphql-federation
+  - db.postgres-isolated
+  - harness.devcontainer
+
+provides:
+  - domain-service
+  - graphql-subgraph-instance
+  - schema-isolated-database
+
+parameters:
+  service_name:
+    type: string
+    required: true
+    description: >
+      Service name (lowercase, alphanumeric with hyphens). Used for the
+      directory name, package name, DB schema, DB role, Traefik route,
+      and gateway registration. Example: "billing", "inventory".
+    pattern: "^[a-z][a-z0-9-]*$"
+  port:
+    type: number
+    required: true
+    description: >
+      Port the service listens on. Must not conflict with existing
+      services. Convention: sequential from 4000 (gateway), 4001 (iam),
+      4002 (system), 4003 (agents), etc.
+  entity_name:
+    type: string
+    required: true
+    description: >
+      Primary domain entity name (PascalCase). Used for the GraphQL type,
+      table name, service class, and migration files. Example: "Invoice",
+      "Product", "Subscription".
+  entity_fields:
+    type: string
+    required: false
+    default: "key:string,name:string"
+    description: >
+      Comma-separated field definitions for the entity. Format:
+      fieldName:type where type is string, number, or boolean. The id,
+      created_at, and updated_at fields are always included automatically.
+  db_password:
+    type: string
+    required: false
+    default: "${service_name}_dev"
+    description: >
+      Password for the service's dedicated Postgres role. For local dev
+      only — production must use secrets management.
+
+application_instructions: |
+  ## 1. Choose a port
+
+  Select the next available port. Check the ship's manifest `services`
+  array to find the highest port in use, then increment. The service
+  will listen on this port for both HTTP (health) and GraphQL.
+
+  ## 2. Add domain types to `packages/domain/`
+
+  Create `packages/domain/src/<entity_name_snake>.ts` with a TypeScript
+  interface for the primary entity:
+
+  ```typescript
+  export interface <EntityName> {
+    id: number
+    // ... fields from entity_fields parameter
+    createdAt: Date
+    updatedAt: Date
+  }
+  ```
+
+  Re-export from `packages/domain/src/index.ts`:
+
+  ```typescript
+  export type { <EntityName> } from './<entity_name_snake>.js'
+  ```
+
+  ## 3. Provision the database schema and role
+
+  Add OpenTofu resources for the new service in
+  `infra/local/tf/modules/postgres/main.tf`:
+
+  ```hcl
+  resource "postgresql_role" "<service_name>_svc" {
+    name     = "<service_name>_svc"
+    login    = true
+    password = var.<service_name>_svc_password
+  }
+
+  resource "postgresql_schema" "<service_name>" {
+    name     = "<service_name>"
+    owner    = postgresql_role.<service_name>_svc.name
+    database = var.database
+  }
+
+  resource "postgresql_grant" "<service_name>_schema_usage" {
+    role        = postgresql_role.<service_name>_svc.name
+    database    = var.database
+    schema      = postgresql_schema.<service_name>.name
+    object_type = "schema"
+    privileges  = ["CREATE", "USAGE"]
+  }
+
+  resource "postgresql_default_privileges" "<service_name>_tables" {
+    role        = postgresql_role.<service_name>_svc.name
+    database    = var.database
+    schema      = postgresql_schema.<service_name>.name
+    owner       = postgresql_role.<service_name>_svc.name
+    object_type = "table"
+    privileges  = ["SELECT", "INSERT", "UPDATE", "DELETE"]
+  }
+  ```
+
+  Add the password variable to `modules/postgres/variables.tf` and
+  pass it through `main.tf`. Run `tofu apply` to provision.
+
+  ## 4. Create the service directory
+
+  Create `services/<service_name>/` with:
+  - `package.json` — dependencies: fastify, mercurius,
+    @mercuriusjs/federation, @moribashi/* suite, @<scope>/common
+  - `tsconfig.json` — extends ../../tsconfig.base.json
+  - `tsup.config.ts` — entry: src/index.ts, format: esm
+  - `vitest.config.ts` — globals: true
+
+  ## 5. Write migrations
+
+  Create `services/<service_name>/data/migrations/`:
+
+  ```sql
+  -- V0.0.1__create_<entity_name_snake>.sql
+  CREATE TABLE <entity_name_snake> (
+      id         SERIAL       PRIMARY KEY,
+      key        VARCHAR(100) NOT NULL UNIQUE,
+      name       VARCHAR(255) NOT NULL,
+      created_at TIMESTAMPTZ  NOT NULL DEFAULT now(),
+      updated_at TIMESTAMPTZ  NOT NULL DEFAULT now()
+  );
+  ```
+
+  Add a seed file:
+
+  ```sql
+  -- V0.0.2__seed.sql
+  INSERT INTO <entity_name_snake> (id, key, name) VALUES
+      (1, 'example', 'Example <EntityName>');
+  SELECT setval('<entity_name_snake>_id_seq',
+    (SELECT max(id) FROM <entity_name_snake>));
+  ```
+
+  ## 6. Write the service class
+
+  Create `services/<service_name>/src/<entity_name_snake>/<entity_name_snake>.svc.ts`:
+
+  ```typescript
+  import type { Db } from '@moribashi/pg'
+
+  export default class <EntityName>Service {
+    private db: Db
+
+    constructor({ db }: { db: Db }) {
+      this.db = db
+    }
+
+    async search(input: { idIn?: number[]; keyLike?: string }) {
+      const conditions: string[] = []
+      const params: Record<string, unknown> = {}
+
+      if (input.idIn?.length) {
+        conditions.push('id = ANY(:idIn)')
+        params.idIn = input.idIn
+      }
+      if (input.keyLike) {
+        conditions.push('key ILIKE :keyLike')
+        params.keyLike = `%${input.keyLike}%`
+      }
+
+      const where = conditions.length
+        ? `WHERE ${conditions.join(' AND ')}`
+        : ''
+      const results = await this.db.query(
+        `SELECT * FROM <entity_name_snake> ${where} ORDER BY id`,
+        params,
+      )
+      return { results }
+    }
+  }
+  ```
+
+  Convention: default export, PascalCase class name, constructor DI,
+  parameterized SQL queries.
+
+  ## 7. Write the GraphQL schema
+
+  Create `services/<service_name>/src/schema.ts` following Moribashi
+  namespace-nesting conventions:
+
+  ```graphql
+  type <EntityName> @key(fields: "id") {
+    id: Int!
+    key: String!
+    name: String!
+    createdAt: String!
+    updatedAt: String!
+  }
+
+  type <ServicePascal><EntityPascal>Search {
+    results: [<EntityName>!]!
+  }
+
+  input <ServicePascal><EntityPascal>SearchInput {
+    idIn: [Int!]
+    keyLike: String
+  }
+
+  type <ServicePascal><EntityPascalPlural> {
+    search(input: <ServicePascal><EntityPascal>SearchInput!):
+      <ServicePascal><EntityPascal>Search!
+  }
+
+  type <ServicePascal> {
+    <entityCamelPlural>: <ServicePascal><EntityPascalPlural>!
+  }
+
+  extend type Query {
+    <serviceCamel>: <ServicePascal>!
+  }
+  ```
+
+  For mutations, follow the same nesting: `<ServicePascal>Ops` →
+  `<ServicePascal><EntityPascalPlural>Ops`.
+
+  ## 8. Write resolvers
+
+  Create `services/<service_name>/src/resolvers.ts`:
+
+  ```typescript
+  export interface RequestCradle {
+    <entityCamel>Service: <EntityName>Service
+  }
+
+  export const resolvers = {
+    Query: { <serviceCamel>: () => ({}) },
+    <ServicePascal>: { <entityCamelPlural>: () => ({}) },
+    <ServicePascal><EntityPascalPlural>: {
+      async search(this: RequestCradle, _, args) {
+        return this.<entityCamel>Service.search(args.input)
+      },
+    },
+    <EntityName>: {
+      async __resolveReference(this: RequestCradle, ref) {
+        const { results } = await this.<entityCamel>Service
+          .search({ idIn: [ref.id] })
+        return results[0] ?? null
+      },
+    },
+  }
+  ```
+
+  Namespace resolvers (`Query.<serviceCamel>`, `<ServicePascal>.<entityPlural>`)
+  return `({})` — they are passthrough objects for nested field resolution.
+
+  ## 9. Bootstrap the app
+
+  Create `src/app.ts` with the Moribashi pipeline:
+  1. `createApp()` — instantiate DI container
+  2. `.use(webPlugin({port, host}))` — register Fastify
+  3. `.use(pgPlugin({...}))` — register Postgres + auto-run migrations
+  4. `.scan(['**/*.svc.ts'])` — auto-discover service classes
+  5. Get Fastify instance, register federation plugin with schema + resolvers
+  6. Add `GET /health` endpoint
+  7. Return `{ app, fastify }`
+
+  Create `src/index.ts`:
+  ```typescript
+  import { buildApp } from './app.js'
+  const { app } = await buildApp()
+  await app.start()
+  ```
+
+  ## 10. Register with the gateway
+
+  Add the new service to `services/gateway/src/config.ts`:
+  ```typescript
+  <service_name>: getEnv("<SERVICE_NAME>_URL",
+    "http://localhost:<port>/graphql")!
+  ```
+
+  Add to `services/gateway/src/app.ts` services array:
+  ```typescript
+  { name: '<service_name>', url: config.services.<service_name> }
+  ```
+
+  ## 11. Add Traefik routing
+
+  In `.devcontainer/traefik/dynamic.yml`, add:
+  - Router: `PathPrefix('/api/<service_name>')` → service
+  - Middleware: stripPrefix `/api/<service_name>`
+  - Service: loadBalancer → `http://aegir-dev:<port>`
+
+  ## 12. Write tests
+
+  Create `src/app.test.ts` with:
+  1. Health check: `GET /health` → `{ status: "ok", service: "<service_name>" }`
+  2. Schema introspection: `_service { sdl }` contains `<EntityName>`
+  3. Query test: seeded data returns correctly
+  4. Federation reference resolution: `__resolveReference` works
+
+test_criteria:
+  - description: Service builds successfully
+    command: "pnpm --filter @<scope>/<service_name> build"
+  - description: Service types check
+    command: "cd services/<service_name> && npx tsc --noEmit"
+  - description: Service tests pass
+    command: "pnpm --filter @<scope>/<service_name> test"
+  - description: Health check responds
+    command: >-
+      curl -sf http://localhost:<port>/health
+      | grep -q '"status":"ok"'
+  - description: Federated schema is served
+    command: >-
+      curl -sf -X POST http://localhost:<port>/graphql
+      -H 'Content-Type: application/json'
+      -d '{"query":"{ _service { sdl } }"}'
+      | grep -q '<EntityName>'
+  - description: Gateway includes the new service's types
+    command: >-
+      curl -sf -X POST http://localhost:4000/graphql
+      -H 'Content-Type: application/json'
+      -d '{"query":"{ __schema { types { name } } }"}'
+      | grep -q '<EntityName>'
+  - description: Database schema and role exist
+    command: >-
+      PGPASSWORD=<db_password> psql -h postgres -U <service_name>_svc -d aegir
+      -c "SELECT 1 FROM <service_name>.<entity_name_snake> LIMIT 1;"
+
+security_notes: |
+  - **Schema-isolated database access:** Each service gets a dedicated
+    Postgres role with access ONLY to its own schema. The role is granted
+    DML-only privileges (SELECT, INSERT, UPDATE, DELETE) via default
+    privileges — it cannot CREATE or DROP tables outside migrations. This
+    prevents a compromised service from accessing other services' data.
+  - **Parameterized SQL queries:** All service classes MUST use parameterized
+    queries (`:paramName` binding) for user-supplied input. Never use string
+    concatenation or template literals for SQL construction. The ILIKE pattern
+    wrapping (`%${input}%`) is safe because the value is bound as a parameter.
+  - **Input validation at the GraphQL boundary:** GraphQL's type system
+    provides the first layer of input validation (non-null, enums, input
+    types). Add additional validation in service methods for business rules
+    (e.g., max string length, allowed characters, numeric ranges).
+  - **Federation reference resolution security:** The `__resolveReference`
+    resolver receives entity references from other services via the gateway.
+    Ensure that reference resolution respects tenant/org scoping — do not
+    return entities that the requesting user's organization does not own.
+  - **Migration ordering:** Flyway-style migrations are applied in version
+    order on startup. Never modify an applied migration — create a new one.
+    Destructive operations (DROP, ALTER COLUMN TYPE) should be reviewed for
+    data loss risk and backward compatibility.
+  - **Least privilege for service passwords:** Local dev passwords follow
+    the convention `<service_name>_dev`. Production MUST use unique,
+    randomly generated passwords stored in AWS Secrets Manager (or
+    equivalent). Never reuse passwords across services.
+  - **Health endpoint does not leak internals:** The `/health` endpoint
+    returns only `{ status, service }`. Do not include database connection
+    status, version numbers, or configuration details in health responses —
+    these can aid attackers in reconnaissance.
+
+touchpoints:
+  - "services/<service_name>/package.json"
+  - "services/<service_name>/tsconfig.json"
+  - "services/<service_name>/tsup.config.ts"
+  - "services/<service_name>/vitest.config.ts"
+  - "services/<service_name>/src/index.ts"
+  - "services/<service_name>/src/app.ts"
+  - "services/<service_name>/src/schema.ts"
+  - "services/<service_name>/src/resolvers.ts"
+  - "services/<service_name>/src/<entity_name_snake>/<entity_name_snake>.svc.ts"
+  - "services/<service_name>/data/migrations/"
+  - "services/<service_name>/src/app.test.ts"
+  - packages/domain/src/index.ts
+  - "packages/domain/src/<entity_name_snake>.ts"
+  - infra/local/tf/modules/postgres/main.tf
+  - infra/local/tf/modules/postgres/variables.tf
+  - infra/local/tf/variables.tf
+  - infra/local/tf/main.tf
+  - services/gateway/src/config.ts
+  - services/gateway/src/app.ts
+  - .devcontainer/traefik/dynamic.yml

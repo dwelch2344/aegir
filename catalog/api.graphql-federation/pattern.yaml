@@ -1,0 +1,283 @@
+id: api.graphql-federation
+version: "0.1.0"
+name: Federated GraphQL Gateway (Mercurius + Moribashi Conventions)
+description: >
+  Sets up a federated GraphQL architecture using Mercurius Gateway for the
+  API gateway and @mercuriusjs/federation for subgraphs. Subgraphs follow
+  Moribashi framework conventions: namespace-prefixed type naming
+  (e.g. IamIdentities, IamOps), resolver binding via bindResolversToScope
+  for dependency-injected request context, and the "extend type Query / Mutation"
+  pattern for composable top-level fields. The gateway discovers and polls
+  subgraph services by name, enabling independent deployment and schema
+  evolution per service.
+
+preconditions:
+  - build.pnpm-turbo
+  - db.postgres-isolated
+
+provides:
+  - api.graphql-gateway
+  - api.graphql-federation
+  - api.graphql-subgraph
+  - api.graphql-subscriptions
+
+parameters:
+  gateway_port:
+    type: number
+    required: false
+    default: 4000
+    description: >
+      Port the gateway service listens on.
+  service_name:
+    type: string
+    required: true
+    description: >
+      Short lowercase identifier for the new subgraph service (e.g. "iam",
+      "billing"). Used to derive namespace prefixes, environment variable
+      names, and service registration entries.
+  service_port:
+    type: number
+    required: true
+    description: >
+      Port the subgraph service listens on (e.g. 4001, 4002).
+  polling_interval:
+    type: number
+    required: false
+    default: 5000
+    description: >
+      Interval in milliseconds at which the gateway polls subgraphs for
+      schema changes.
+
+application_instructions: |
+  ## 1. Gateway service setup
+
+  Create `services/gateway/src/app.ts`. Register `@mercuriusjs/gateway` on a
+  Fastify instance with the list of federated services:
+
+  ```typescript
+  import gateway from '@mercuriusjs/gateway'
+  import Fastify from 'fastify'
+
+  const app = Fastify({ logger: true })
+
+  app.register(gateway, {
+    gateway: {
+      services: [
+        { name: '<service_name>', url: config.services.<service_name> },
+        // Add each subgraph here as it is created
+      ],
+      pollingInterval: 5000,       // or polling_interval parameter
+      retryServicesCount: 10,
+      retryServicesInterval: 3000,
+    },
+    graphiql: true,
+  })
+  ```
+
+  Create `services/gateway/src/config.ts` to read subgraph URLs from
+  environment variables:
+
+  ```typescript
+  export const config = {
+    port: Number(getEnv('GATEWAY_PORT', '4000')),
+    host: getEnv('GATEWAY_HOST', '0.0.0.0'),
+    services: {
+      <service_name>: getEnv('<SERVICE_NAME>_URL', 'http://localhost:<service_port>/graphql'),
+    },
+  }
+  ```
+
+  ## 2. Subgraph service setup
+
+  Create `services/<service_name>/src/app.ts`. Use Moribashi's `createApp()`
+  and register `@mercuriusjs/federation`:
+
+  ```typescript
+  import federation from '@mercuriusjs/federation'
+  import { createApp } from '@moribashi/core'
+
+  const app = createApp()
+
+  // Register plugins (webPlugin, pgPlugin, etc.)
+  // ...
+
+  // Scan for *.svc.ts files to auto-register DI services
+  await app.scan(['**/*.svc.ts'], { cwd: __dirname })
+
+  const fastify = app.resolve<FastifyInstance>('fastify')
+
+  fastify.register(federation, {
+    schema: typeDefs,
+    resolvers: bindResolversToScope(resolvers),
+    graphiql: true,
+    subscription: true,
+    context: async (request) => ({ scope: request.scope }),
+  })
+  ```
+
+  ## 3. Namespace-prefixed type naming (Moribashi convention)
+
+  All GraphQL types in a subgraph MUST be prefixed with the service's
+  namespace to avoid collisions in the federated schema. The convention is
+  PascalCase service name as prefix:
+
+  - **Entity types** (federated, no prefix): `Identity`, `Organization`
+    — these use `@key(fields: "id")` and represent shared domain entities.
+  - **Namespace containers**: `Iam`, `IamOps` — entry points under Query
+    and Mutation respectively.
+  - **Capability groups**: `IamIdentities`, `IamOrganizations` — group
+    related query operations under the namespace.
+  - **Operation groups**: `IamIdentitiesOps`, `IamOrganizationsOps` —
+    group related mutations under the namespace.
+  - **Search results**: `IamIdentitySearch`, `IamOrganizationSearch` —
+    wrap result arrays for pagination metadata.
+  - **Input types**: `IamIdentitySearchInput`, `IamOrganizationSyncInput`
+
+  The Query and Mutation root types are extended (never redefined):
+
+  ```graphql
+  extend type Query {
+    <namespace>: <Namespace>!
+  }
+
+  extend type Mutation {
+    <namespace>: <Namespace>Ops!
+  }
+  ```
+
+  This creates a tree-structured API: `query { iam { identities { search(...) } } }`
+  rather than flat root fields.
+
+  ## 4. Resolver binding pattern (bindResolversToScope)
+
+  Subgraphs use Moribashi's dependency injection via Awilix scoped
+  containers. The `bindResolversToScope` function wraps each resolver so
+  that `this` is bound to the request scope's cradle, giving resolvers
+  access to DI-registered services:
+
+  ```typescript
+  function bindResolversToScope(map: ResolverMap<any>) {
+    const bound: Record<string, Record<string, Function>> = {}
+    for (const [type, fields] of Object.entries(map)) {
+      bound[type] = {}
+      for (const [field, fn] of Object.entries(fields)) {
+        if (typeof fn === 'function') {
+          bound[type][field] = (parent, args, ctx, info) => {
+            const scope = ctx.scope
+            const target = scope?.cradle ?? scope?.container?.cradle ?? {}
+            return fn.call(target, parent, args, ctx, info)
+          }
+        } else {
+          bound[type][field] = fn
+        }
+      }
+    }
+    return bound
+  }
+  ```
+
+  Resolvers are then written as methods that use `this` to access services:
+
+  ```typescript
+  const resolvers: ResolverMap<RequestCradle> = {
+    IamIdentities: {
+      async search(this: RequestCradle, _, args) {
+        return this.identitiesService.search(args.input)
+      },
+    },
+  }
+  ```
+
+  ## 5. Federation entity resolution
+
+  Entity types that participate in federation must have `__resolveReference`
+  resolvers:
+
+  ```graphql
+  type Identity @key(fields: "id") {
+    id: Int!
+    # ... fields
+  }
+  ```
+
+  ```typescript
+  Identity: {
+    async __resolveReference(this: RequestCradle, ref: { id: number }) {
+      const { results } = await this.identitiesService.search({ idIn: [ref.id] })
+      return results[0] ?? null
+    },
+  },
+  ```
+
+  ## 6. Register the subgraph in the gateway
+
+  Add the new service to the gateway's service list in
+  `services/gateway/src/app.ts` and add its URL to
+  `services/gateway/src/config.ts`.
+
+  ## 7. Add Traefik routing (if using harness.devcontainer)
+
+  Add a route in `.devcontainer/traefik/dynamic.yml` for the new subgraph's
+  direct access endpoint (e.g. `/api/<service_name>`), with a `stripPrefix`
+  middleware.
+
+test_criteria:
+  - description: Gateway starts and returns a health check response
+    command: "curl -sf http://localhost:4000/health | grep -q ok"
+  - description: Subgraph starts and returns a health check response
+    command: "curl -sf http://localhost:<service_port>/health | grep -q ok"
+  - description: Gateway introspection includes the subgraph's namespace type
+    command: >
+      curl -sf http://localhost:4000/graphql
+      -H 'Content-Type: application/json'
+      -d '{"query":"{ __type(name: \"<Namespace>\") { name fields { name } } }"}'
+      | grep -q '<Namespace>'
+  - description: A federated query resolves through the gateway to the subgraph
+    command: >
+      curl -sf http://localhost:4000/graphql
+      -H 'Content-Type: application/json'
+      -d '{"query":"{ <namespace> { <capability> { search(input: {}) { results { id } } } } }"}'
+      | grep -q 'results'
+  - description: Entity reference resolution works across subgraphs
+    manual: >
+      Create an entity in one subgraph, then query it from another subgraph
+      via a federated reference. Verify the gateway correctly resolves the
+      __resolveReference call and returns the full entity.
+
+security_notes: |
+  - **No authentication on GraphQL endpoints by default:** The gateway and
+    subgraphs expose unauthenticated GraphQL endpoints. Authentication and
+    authorization must be layered on top (e.g. via the auth.oidc-keycloak
+    pattern or custom Fastify hooks). Never expose federated services
+    directly to the internet without an auth layer.
+  - **Subgraph-to-subgraph trust:** In this architecture, the gateway
+    proxies all requests and subgraphs trust the gateway implicitly. In
+    production, restrict subgraph network access so only the gateway can
+    reach them (e.g. via network policies or service mesh). Subgraphs
+    should not be directly accessible from outside the cluster.
+  - **Introspection must be disabled in production:** GraphiQL and schema
+    introspection are enabled for development convenience. Disable both
+    in production to prevent schema disclosure. Set `graphiql: false` and
+    disable introspection in the Mercurius configuration.
+  - **Query depth and complexity limiting:** Federated schemas can create
+    deeply nested query paths. Add query depth limiting and complexity
+    analysis (e.g. via mercurius-validation or a custom plugin) to prevent
+    denial-of-service via expensive queries.
+  - **Input validation:** All resolver inputs should be validated before
+    use. The `search` pattern uses typed input objects, but ensure that
+    array inputs (like `idIn`) have reasonable size limits to prevent
+    resource exhaustion.
+  - **Subscription security:** Subscriptions use pub/sub and are currently
+    unauthenticated. In production, validate the WebSocket connection's
+    auth token before allowing subscription establishment, and scope
+    subscription topics to authorized data.
+
+touchpoints:
+  - services/gateway/src/app.ts
+  - services/gateway/src/config.ts
+  - services/gateway/package.json
+  - "services/<service_name>/src/app.ts"
+  - "services/<service_name>/src/schema.ts"
+  - "services/<service_name>/src/resolvers.ts"
+  - "services/<service_name>/package.json"
+  - .devcontainer/traefik/dynamic.yml

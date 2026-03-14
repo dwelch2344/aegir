@@ -3,6 +3,9 @@
   "version": "0.0.1",
   "private": true,
   "type": "module",
+  "bin": {
+    "shipyard": "./dist/cli.js"
+  },
   "exports": {
     ".": {
       "import": "./dist/index.js",

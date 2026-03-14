@@ -1,0 +1,230 @@
+id: agents.ai-conversation
+version: "0.1.0"
+name: AI Conversation Service
+description: >
+  A GraphQL federation subgraph providing AI-powered conversation management.
+  Exposes AgentsConversation and AgentsMessage types with full CRUD operations,
+  real-time message subscriptions via GraphQL Subscriptions, and LLM-backed
+  message handling through Conductor workflow orchestration. The service
+  persists conversations and messages in PostgreSQL (schema-isolated), supports
+  multi-org scoping via organizationId, and delegates AI inference to a
+  persistent Conductor workflow that manages the LLM interaction loop
+  (start conversation workflow, signal with user messages, receive assistant
+  responses). Auto-titles conversations from the first user message.
+
+preconditions:
+  - api.graphql-federation
+  - orchestration.conductor
+
+provides:
+  - ai-conversation-crud
+  - ai-message-management
+  - llm-orchestrated-chat
+  - real-time-message-subscriptions
+  - conversation-org-scoping
+
+parameters:
+  serviceName:
+    type: string
+    required: false
+    default: "agents"
+    description: >
+      The service name used for the GraphQL subgraph, schema namespace,
+      health endpoint, and Docker Compose service entry.
+  servicePort:
+    type: number
+    required: false
+    default: 4003
+    description: The port the Fastify server listens on.
+  pgSchema:
+    type: string
+    required: false
+    default: "agents"
+    description: >
+      The PostgreSQL schema name for table isolation. Tables (conversation,
+      message) are created within this schema.
+  orchestrationUrl:
+    type: string
+    required: false
+    default: "http://localhost:4010"
+    description: >
+      Base URL of the orchestration service that proxies Conductor workflow
+      start and signal operations.
+
+application_instructions: |
+  ## 1. Database migrations
+
+  Create a PostgreSQL schema and migration files under
+  `services/<serviceName>/data/migrations/`:
+
+  **V0.0.1__create_conversation.sql**
+  ```sql
+  CREATE TABLE conversation (
+      id         UUID         PRIMARY KEY DEFAULT gen_random_uuid(),
+      title      VARCHAR(255) NOT NULL DEFAULT 'New conversation',
+      created_at TIMESTAMPTZ  NOT NULL DEFAULT now(),
+      updated_at TIMESTAMPTZ  NOT NULL DEFAULT now()
+  );
+  ```
+
+  **V0.0.2__create_message.sql**
+  ```sql
+  CREATE TABLE message (
+      id              UUID         PRIMARY KEY DEFAULT gen_random_uuid(),
+      conversation_id UUID         NOT NULL REFERENCES conversation(id) ON DELETE CASCADE,
+      role            VARCHAR(20)  NOT NULL CHECK (role IN ('user', 'assistant', 'system')),
+      text            TEXT         NOT NULL,
+      created_at      TIMESTAMPTZ  NOT NULL DEFAULT now()
+  );
+  CREATE INDEX idx_message_conversation_id ON message (conversation_id);
+  CREATE INDEX idx_message_created_at ON message (conversation_id, created_at);
+  ```
+
+  **V0.0.3__add_workflow_id.sql**
+  ```sql
+  ALTER TABLE conversation ADD COLUMN workflow_id VARCHAR(255);
+  ```
+
+  **V0.0.4__add_organization_id.sql**
+  ```sql
+  ALTER TABLE conversation ADD COLUMN organization_id INTEGER NOT NULL DEFAULT 2;
+  ALTER TABLE conversation ALTER COLUMN organization_id DROP DEFAULT;
+  CREATE INDEX idx_conversation_organization_id ON conversation (organization_id);
+  ```
+
+  ## 2. GraphQL schema
+
+  Define a federated subgraph schema in `services/<serviceName>/src/schema.ts`.
+  Key types:
+
+  - `AgentsConversation @key(fields: "id")` — id, organizationId, title,
+    workflowId, createdAt, updatedAt, messages
+  - `AgentsMessage @key(fields: "id")` — id, conversationId, role, text,
+    createdAt
+  - `AgentsConversationSearch` — wraps search results
+  - Inputs: `AgentsConversationCreateInput` (organizationId required, title
+    optional), `AgentsConversationUpdateInput`, `AgentsMessageAddInput`,
+    `AgentsSendMessageInput`
+  - `AgentsSendMessageResult` — returns the saved userMessage + workflowId
+
+  Follow the Moribashi namespace-nesting convention:
+  - `Query.agents.conversations.search(input)`
+  - `Mutation.agents.conversations.create / update / delete / addMessage / sendMessage`
+  - `Subscription.agentsMessageAdded(conversationId)`
+
+  ## 3. Service layer
+
+  Create `services/<serviceName>/src/conversations/conversations.svc.ts`:
+
+  - Inject `Db` from `@moribashi/pg` via constructor DI
+  - Implement: `search(input)`, `create(input)`, `update(id, input)`,
+    `delete(id)`, `messages(conversationId)`, `addMessage(input)`
+  - All queries use parameterized SQL (`:param` syntax) — never interpolate
+    user input into SQL strings
+  - `addMessage` touches the conversation's `updated_at` timestamp
+
+  ## 4. Resolvers
+
+  In `services/<serviceName>/src/resolvers.ts`:
+
+  - Use Moribashi's `ResolverMap` pattern with `this`-based DI scope binding
+  - `sendMessage` resolver orchestrates the full flow:
+    1. Save user message via service layer
+    2. Auto-title conversation if this is the first user message
+    3. Start a new Conductor workflow if no workflowId exists on the
+       conversation (POST to `${orchestrationUrl}/agents/chat/start`)
+    4. Signal the running workflow with the user's text
+       (POST to `${orchestrationUrl}/agents/chat/message`)
+    5. Return `{ userMessage, workflowId }`
+  - `agentsMessageAdded` subscription uses `mercurius` pubsub with
+    `withFilter` to scope by conversationId
+
+  ## 5. App setup
+
+  In `services/<serviceName>/src/app.ts`:
+
+  - Register `webPlugin` (Fastify) and `pgPlugin` (PostgreSQL with migration
+    runner) from Moribashi
+  - Register `@mercuriusjs/federation` with schema, resolvers, graphiql, and
+    subscription support
+  - Add `/health` endpoint returning `{ status: 'ok', service: '<serviceName>' }`
+  - Use `app.scan(['**/*.svc.ts'])` for automatic service class discovery
+
+  ## 6. Federation gateway registration
+
+  Register this subgraph with the federation gateway at
+  `http://<serviceName>:<servicePort>/graphql`.
+
+test_criteria:
+  - description: Service starts and health endpoint responds
+    command: curl -sf http://localhost:4003/health | grep -q '"status":"ok"'
+
+  - description: Database migrations apply without errors
+    manual: >
+      Start the service and verify logs show successful migration execution
+      for all V0.0.x migration files.
+
+  - description: GraphQL introspection shows AgentsConversation and AgentsMessage types
+    command: >-
+      curl -sf http://localhost:4003/graphql
+      -H 'Content-Type: application/json'
+      -d '{"query":"{ __type(name: \"AgentsConversation\") { name fields { name } } }"}'
+      | grep -q 'AgentsConversation'
+
+  - description: Create and retrieve a conversation via GraphQL
+    manual: >
+      Execute a mutation to create a conversation with an organizationId,
+      then query it back via agents.conversations.search and verify the
+      title and organizationId match.
+
+  - description: sendMessage triggers Conductor workflow and returns workflowId
+    manual: >
+      Create a conversation, then call sendMessage with text. Verify the
+      response includes a userMessage with the correct text and a non-null
+      workflowId. Verify the orchestration service received the workflow
+      start request.
+
+  - description: Subscription delivers real-time messages
+    manual: >
+      Open a GraphQL subscription on agentsMessageAdded for a conversation,
+      then add a message via addMessage mutation. Verify the subscription
+      client receives the message payload.
+
+security_notes: |
+  - **LLM API key management**: API keys for LLM providers (OpenAI, Anthropic,
+    etc.) must be stored in a secrets manager (AWS Secrets Manager, mounted
+    files, or environment variables from a secure source). They must never
+    appear in source code, migration files, or GraphQL responses. The
+    orchestration layer handles key injection into Conductor workflows.
+  - **Conversation org-scoping**: Every conversation has an organizationId
+    field. Queries must always filter by organizationId to prevent cross-tenant
+    data access. The search resolver accepts organizationId as a filter — the
+    gateway or auth middleware must enforce that callers can only query their
+    own organization's conversations.
+  - **Prompt injection awareness**: User-supplied message text is passed to
+    LLM workflows via Conductor. The orchestration layer must sanitize or
+    sandbox LLM prompts to prevent prompt injection attacks. The agents
+    service itself stores messages verbatim but the downstream workflow must
+    treat user text as untrusted input.
+  - **Rate limiting on LLM calls**: The sendMessage resolver triggers
+    external LLM API calls via Conductor workflows. Rate limiting should be
+    enforced at the gateway or orchestration layer to prevent abuse and cost
+    overruns. Consider per-org and per-user rate limits.
+  - **Message content sanitization**: While messages are stored as-is in
+    PostgreSQL, any rendering of message content (in UIs or downstream
+    systems) must sanitize for XSS. The GraphQL layer returns raw text; the
+    consuming client is responsible for safe rendering.
+  - **SQL injection prevention**: All database queries use parameterized
+    statements (`:param` syntax via @moribashi/pg). Never concatenate user
+    input into SQL strings.
+
+touchpoints:
+  - services/agents/src/app.ts
+  - services/agents/src/schema.ts
+  - services/agents/src/resolvers.ts
+  - services/agents/src/conversations/conversations.svc.ts
+  - services/agents/data/migrations/V0.0.1__create_conversation.sql
+  - services/agents/data/migrations/V0.0.2__create_message.sql
+  - services/agents/data/migrations/V0.0.3__add_workflow_id.sql
+  - services/agents/data/migrations/V0.0.4__add_organization_id.sql
+  - services/agents/package.json

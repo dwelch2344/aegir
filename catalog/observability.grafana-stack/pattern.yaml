@@ -1,0 +1,338 @@
+id: observability.grafana-stack
+version: "0.1.0"
+name: Full Observability Stack (Grafana + Prometheus + Loki + Tempo)
+description: >
+  A complete observability stack providing metrics, logs, and distributed
+  traces for local development. Prometheus scrapes metrics endpoints on a
+  5-second interval. Loki aggregates logs with Promtail shipping container
+  logs via Docker service discovery. Tempo receives OpenTelemetry traces
+  over gRPC (4317) and HTTP (4318) using the OTLP protocol. Grafana ties
+  all three together with pre-provisioned datasources and dashboards,
+  served behind Traefik at /infra/grafana. Datasources are provisioned
+  declaratively via YAML so they are available immediately on first start
+  without manual configuration.
+
+preconditions:
+  - harness.devcontainer
+
+provides:
+  - metrics-collection
+  - log-aggregation
+  - distributed-tracing
+  - observability-dashboards
+  - container-log-shipping
+  - prometheus-scraping
+
+parameters:
+  grafanaRootUrl:
+    type: string
+    required: false
+    default: http://localhost:7356/infra/grafana
+    description: >
+      Grafana's root URL, used for generating correct links when served
+      behind a reverse proxy sub-path.
+  scrapeInterval:
+    type: string
+    required: false
+    default: "5s"
+    description: >
+      Prometheus global scrape interval. Controls how frequently metrics
+      endpoints are polled.
+  tempoVersion:
+    type: string
+    required: false
+    default: "2.7.2"
+    description: Grafana Tempo image tag.
+  enableAnonymousAccess:
+    type: boolean
+    required: false
+    default: true
+    description: >
+      Whether Grafana allows anonymous access with Admin role. Appropriate
+      for local development only. Must be disabled in production.
+
+application_instructions: |
+  ## 1. Add Prometheus service to docker-compose
+
+  Add a Prometheus service using the `prom/prometheus:latest` image. Use an
+  inline entrypoint to generate the scrape config, avoiding the need for a
+  separate config file:
+
+  ```yaml
+  prometheus:
+    image: prom/prometheus:latest
+    restart: unless-stopped
+    entrypoint:
+      - sh
+      - -c
+      - |
+        cat <<'EOF' > /etc/prometheus/prometheus.yml
+        global:
+          scrape_interval: 5s
+        scrape_configs:
+          - job_name: "<target-service>"
+            metrics_path: "/actuator/prometheus"
+            static_configs:
+              - targets: ["<service>:<port>"]
+        EOF
+        exec /bin/prometheus --config.file=/etc/prometheus/prometheus.yml
+  ```
+
+  Add scrape jobs for each service that exposes a metrics endpoint.
+
+  ## 2. Add Loki service to docker-compose
+
+  ```yaml
+  loki:
+    image: grafana/loki:latest
+    restart: unless-stopped
+    command: -config.file=/etc/loki/local-config.yaml
+  ```
+
+  Loki uses its built-in default local config which stores data on the
+  local filesystem.
+
+  ## 3. Add Promtail service to docker-compose
+
+  Create `.devcontainer/promtail/config.yml`:
+
+  ```yaml
+  server:
+    http_listen_port: 9080
+    grpc_listen_port: 0
+  positions:
+    filename: /tmp/positions.yaml
+  clients:
+    - url: http://loki:3100/loki/api/v1/push
+  scrape_configs:
+    - job_name: docker
+      docker_sd_configs:
+        - host: unix:///var/run/docker.sock
+          refresh_interval: 5s
+      relabel_configs:
+        - source_labels: ['__meta_docker_container_name']
+          target_label: container
+          regex: '/(.*)'
+        - source_labels: ['__meta_docker_container_log_stream']
+          target_label: stream
+  ```
+
+  Add the Promtail service with bind mounts for Docker socket and container
+  logs:
+
+  ```yaml
+  promtail:
+    image: grafana/promtail:latest
+    restart: unless-stopped
+    volumes:
+      - ./promtail/config.yml:/etc/promtail/config.yml:ro
+      - /var/lib/docker/containers:/var/lib/docker/containers:ro
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    command: -config.file=/etc/promtail/config.yml
+    depends_on:
+      - loki
+  ```
+
+  ## 4. Add Tempo service to docker-compose
+
+  Create `.devcontainer/tempo/tempo.yml`:
+
+  ```yaml
+  stream_over_http_enabled: true
+  server:
+    http_listen_port: 3200
+  distributor:
+    receivers:
+      otlp:
+        protocols:
+          grpc:
+            endpoint: "0.0.0.0:4317"
+          http:
+            endpoint: "0.0.0.0:4318"
+  ingester:
+    lifecycler:
+      ring:
+        kvstore:
+          store: inmemory
+        replication_factor: 1
+  storage:
+    trace:
+      backend: local
+      local:
+        path: /var/tempo/traces
+      wal:
+        path: /var/tempo/wal
+  ```
+
+  Add the Tempo service:
+
+  ```yaml
+  tempo:
+    image: grafana/tempo:2.7.2
+    restart: unless-stopped
+    volumes:
+      - ./tempo/tempo.yml:/etc/tempo/tempo.yml:ro
+      - ./data/tempo:/var/tempo
+    command: ["-config.file=/etc/tempo/tempo.yml"]
+  ```
+
+  ## 5. Add Grafana service to docker-compose
+
+  Create `.devcontainer/grafana/datasources.yml` to provision all three
+  datasources:
+
+  ```yaml
+  apiVersion: 1
+  datasources:
+    - name: Prometheus
+      type: prometheus
+      access: proxy
+      url: http://prometheus:9090
+      isDefault: true
+      editable: true
+    - name: Loki
+      type: loki
+      access: proxy
+      url: http://loki:3100
+      editable: true
+    - name: Tempo
+      type: tempo
+      access: proxy
+      url: http://tempo:3200
+      editable: true
+  ```
+
+  Create `.devcontainer/grafana/dashboards.yml` for dashboard provisioning:
+
+  ```yaml
+  apiVersion: 1
+  providers:
+    - name: default
+      orgId: 1
+      folder: ''
+      type: file
+      disableDeletion: false
+      editable: true
+      options:
+        path: /var/lib/grafana/dashboards
+        foldersFromFilesStructure: false
+  ```
+
+  Place JSON dashboard definitions in `.devcontainer/grafana/dashboards/`.
+
+  Add the Grafana service:
+
+  ```yaml
+  grafana:
+    image: grafana/grafana:latest
+    restart: unless-stopped
+    environment:
+      GF_SERVER_ROOT_URL: http://localhost:7356/infra/grafana
+      GF_SERVER_SERVE_FROM_SUB_PATH: "true"
+      GF_AUTH_ANONYMOUS_ENABLED: "true"
+      GF_AUTH_ANONYMOUS_ORG_ROLE: Admin
+    volumes:
+      - ./grafana/datasources.yml:/etc/grafana/provisioning/datasources/datasources.yml:ro
+      - ./grafana/dashboards.yml:/etc/grafana/provisioning/dashboards/dashboards.yml:ro
+      - ./grafana/dashboards:/var/lib/grafana/dashboards:ro
+      - ./data/grafana:/var/lib/grafana
+    depends_on:
+      - prometheus
+      - loki
+      - tempo
+  ```
+
+  ## 6. Add Traefik routing for Grafana
+
+  In the Traefik dynamic config, add a router for Grafana:
+
+  ```yaml
+  grafana:
+    rule: "PathPrefix(`/infra/grafana`)"
+    service: grafana
+    # No stripPrefix — Grafana handles sub-path via GF_SERVER_SERVE_FROM_SUB_PATH
+  ```
+
+  ## 7. Instrument application services
+
+  For **metrics**: expose a Prometheus-compatible metrics endpoint
+  (e.g., `/metrics` or `/actuator/prometheus`) and add a scrape job to
+  the Prometheus config.
+
+  For **logs**: application logs written to stdout/stderr are automatically
+  collected by Promtail via Docker service discovery. No application-level
+  changes needed.
+
+  For **traces**: configure the OpenTelemetry SDK in each service to export
+  traces to Tempo via OTLP:
+
+  ```
+  OTEL_EXPORTER_OTLP_ENDPOINT=http://tempo:4318
+  OTEL_EXPORTER_OTLP_PROTOCOL=http/protobuf
+  ```
+
+test_criteria:
+  - description: Grafana is accessible via Traefik
+    command: curl -sf http://localhost:7356/infra/grafana/api/health | grep -q 'ok'
+  - description: Prometheus datasource is provisioned in Grafana
+    command: >-
+      curl -sf http://localhost:7356/infra/grafana/api/datasources
+      | grep -q 'Prometheus'
+  - description: Loki datasource is provisioned in Grafana
+    command: >-
+      curl -sf http://localhost:7356/infra/grafana/api/datasources
+      | grep -q 'Loki'
+  - description: Tempo datasource is provisioned in Grafana
+    command: >-
+      curl -sf http://localhost:7356/infra/grafana/api/datasources
+      | grep -q 'Tempo'
+  - description: Prometheus is scraping targets
+    command: >-
+      curl -sf http://prometheus:9090/api/v1/targets
+      | grep -q 'activeTargets'
+  - description: Promtail is shipping logs to Loki
+    command: >-
+      curl -sf 'http://loki:3100/loki/api/v1/label/container/values'
+      | grep -q 'values'
+  - description: Tempo is accepting traces on the OTLP endpoint
+    command: curl -sf http://tempo:3200/ready | grep -q 'ready'
+
+security_notes: |
+  - **No sensitive data in metrics or logs:** Prometheus metrics and Loki
+    log labels must never contain PII, credentials, or session tokens.
+    Scrub or redact sensitive fields before they reach log output or metric
+    labels. In particular, avoid logging request bodies, authorization
+    headers, or database query parameters that may contain user data.
+  - **Scrape endpoint authentication:** In production, Prometheus scrape
+    endpoints should require authentication (e.g., bearer token or mTLS).
+    In the local dev stack, scrape endpoints are unauthenticated because
+    they are only reachable within the Docker network. Do not expose
+    metrics ports to the host.
+  - **Dashboard access control:** Grafana is configured with anonymous
+    Admin access for local development convenience. In production, disable
+    anonymous access (`GF_AUTH_ANONYMOUS_ENABLED=false`), configure a
+    proper authentication provider (OIDC, LDAP), and assign role-based
+    dashboard permissions.
+  - **Promtail Docker socket access:** Promtail mounts the Docker socket
+    (`/var/run/docker.sock`) to discover and tail container logs. This
+    grants read access to Docker API metadata for all containers. In
+    production, use a dedicated log forwarding agent with restricted
+    permissions rather than socket-level access.
+  - **Tempo trace data retention:** Traces may contain request details
+    including URLs, query parameters, and user identifiers. Configure
+    appropriate retention policies and ensure trace storage is access-
+    controlled. The local dev stack uses ephemeral local storage under
+    `.devcontainer/data/tempo/`.
+  - **Network exposure:** Only Grafana is exposed to the host via Traefik.
+    Prometheus (9090), Loki (3100), and Tempo (3200/4317/4318) are only
+    reachable within the Docker Compose network. Do not publish these
+    ports to the host in production deployments.
+
+touchpoints:
+  - .devcontainer/docker-compose.yml
+  - .devcontainer/grafana/datasources.yml
+  - .devcontainer/grafana/dashboards.yml
+  - .devcontainer/grafana/dashboards/
+  - .devcontainer/tempo/tempo.yml
+  - .devcontainer/promtail/config.yml
+  - .devcontainer/traefik/dynamic.yml
