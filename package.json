@@ -5,6 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "turbo dev --ui=stream --log-order=stream --concurrency=15 > log.txt",
+    "start": "turbo run start --ui=stream --log-order=stream --concurrency=15 > log.txt",
     "build": "turbo build",
     "test": "turbo test",
     "lint": "biome check .",
