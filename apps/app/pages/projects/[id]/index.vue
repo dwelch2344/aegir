@@ -55,6 +55,9 @@ const expandedPatternId = ref<string | null>(null)
 
 // Diagnostics
 const diagRunning = ref(false)
+const showReportModal = ref(false)
+const reportModalContent = ref('')
+const reportModalDate = ref('')
 
 // Activity feed
 import type { ProjectActivityEvent } from '~/composables/useProjects'
@@ -206,8 +209,23 @@ async function handleApply(patternId: string) {
   }
 }
 
+function openReportModal(report: string, createdAt: string) {
+  reportModalContent.value = report
+  reportModalDate.value = createdAt
+  showReportModal.value = true
+}
+
+function openActivityReport(activity: any) {
+  if (activity.diagnosticsReport) {
+    openReportModal(activity.diagnosticsReport.report, activity.diagnosticsReport.createdAt)
+  }
+}
+
+const diagWaitingForReport = ref(false)
+
 async function handleRunDiagnostics() {
   diagRunning.value = true
+  diagWaitingForReport.value = true
   error.value = ''
   success.value = ''
   try {
@@ -221,6 +239,7 @@ async function handleRunDiagnostics() {
   } catch (e: any) {
     error.value = e.message || 'Diagnostics failed'
     diagRunning.value = false
+    diagWaitingForReport.value = false
   }
 }
 
@@ -260,7 +279,16 @@ onMounted(() => {
     activityEvents.value.unshift(event)
     // Auto-refresh project data on terminal statuses
     if (event.status === 'COMPLETED' || event.status === 'FAILED') {
-      setTimeout(() => load(), 1500)
+      setTimeout(async () => {
+        await load()
+        // Auto-show report modal when diagnostics finishes
+        if (event.type === 'diagnostics' && event.status === 'COMPLETED' && diagWaitingForReport.value) {
+          diagWaitingForReport.value = false
+          if (project.value?.diagnosticsReport) {
+            openReportModal(project.value.diagnosticsReport.report, project.value.diagnosticsReport.createdAt)
+          }
+        }
+      }, 1500)
     }
   })
 })
@@ -669,10 +697,15 @@ onUnmounted(() => {
 
             <!-- Diagnostics report -->
             <div v-if="project.diagnosticsReport" class="mt-4 pt-4 border-t border-gray-700">
-              <div class="flex items-center justify-between mb-2">
+              <div class="flex items-center justify-between">
                 <p class="text-xs text-gray-500">Last run: {{ formatDate(project.diagnosticsReport.createdAt) }}</p>
+                <button
+                  class="text-xs px-3 py-1.5 rounded bg-violet-600/20 text-violet-400 border border-violet-700/50 hover:bg-violet-600/30 transition-colors"
+                  @click="openReportModal(project.diagnosticsReport.report, project.diagnosticsReport.createdAt)"
+                >
+                  View report
+                </button>
               </div>
-              <div class="p-4 rounded bg-gray-900 border border-gray-700 text-sm text-gray-300 whitespace-pre-wrap overflow-x-auto max-h-96 overflow-y-auto">{{ project.diagnosticsReport.report }}</div>
             </div>
           </div>
         </div>
@@ -747,6 +780,13 @@ onUnmounted(() => {
                     >
                       {{ activity.status }}
                     </span>
+                    <button
+                      v-if="activity.type === 'diagnostics' && activity.status === 'COMPLETED' && activity.diagnosticsReport"
+                      class="text-xs px-2 py-0.5 rounded bg-violet-600/20 text-violet-400 border border-violet-700/50 hover:bg-violet-600/30 transition-colors"
+                      @click="openActivityReport(activity)"
+                    >
+                      View report
+                    </button>
                   </div>
                   <span class="text-xs text-gray-600">{{ formatDate(activity.startedAt) }}</span>
                 </div>
@@ -870,6 +910,37 @@ onUnmounted(() => {
       </ClientOnly>
     </template>
 
+    <!-- Diagnostics Report Modal -->
+    <Teleport to="body">
+      <div
+        v-if="showReportModal"
+        class="fixed inset-0 z-50 flex items-center justify-center"
+        @click.self="showReportModal = false"
+      >
+        <div class="fixed inset-0 bg-black/60" @click="showReportModal = false" />
+        <div class="relative z-10 w-full max-w-3xl max-h-[85vh] mx-4 flex flex-col rounded-xl bg-gray-900 border border-gray-700 shadow-2xl">
+          <!-- Modal header -->
+          <div class="flex items-center justify-between px-6 py-4 border-b border-gray-700 shrink-0">
+            <div>
+              <h2 class="text-base font-semibold text-gray-100">Diagnostics Report</h2>
+              <p class="text-xs text-gray-500 mt-0.5">{{ formatDate(reportModalDate) }}</p>
+            </div>
+            <button
+              class="p-1.5 rounded-lg text-gray-400 hover:text-gray-200 hover:bg-gray-800 transition-colors"
+              @click="showReportModal = false"
+            >
+              <svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M6 18 18 6M6 6l12 12" />
+              </svg>
+            </button>
+          </div>
+          <!-- Modal body -->
+          <div class="flex-1 overflow-y-auto px-6 py-5">
+            <div class="prose-report text-sm text-gray-300" v-html="renderMarkdown(reportModalContent)" />
+          </div>
+        </div>
+      </div>
+    </Teleport>
   </div>
 </template>
 
@@ -893,4 +964,25 @@ onUnmounted(() => {
 .prose-chat :deep(h3) { font-size: 1.05em; }
 .prose-chat :deep(a) { color: #6ee7b7; text-decoration: underline; }
 .prose-chat :deep(hr) { border-color: rgba(255,255,255,0.1); margin: 0.5em 0; }
+
+/* Diagnostics report modal styles */
+.prose-report :deep(p) { margin: 0.5em 0; line-height: 1.6; }
+.prose-report :deep(h1) { font-size: 1.25em; font-weight: 600; margin: 1em 0 0.5em; color: #f3f4f6; }
+.prose-report :deep(h2) { font-size: 1.1em; font-weight: 600; margin: 1em 0 0.4em; color: #e5e7eb; }
+.prose-report :deep(h3) { font-size: 1em; font-weight: 600; margin: 0.75em 0 0.3em; color: #d1d5db; }
+.prose-report :deep(ul), .prose-report :deep(ol) { margin: 0.5em 0; padding-left: 1.5em; }
+.prose-report :deep(ul) { list-style-type: disc; }
+.prose-report :deep(ol) { list-style-type: decimal; }
+.prose-report :deep(li) { margin: 0.25em 0; }
+.prose-report :deep(strong) { font-weight: 600; color: #e5e7eb; }
+.prose-report :deep(em) { font-style: italic; }
+.prose-report :deep(code) { background: rgba(255,255,255,0.08); padding: 0.15em 0.4em; border-radius: 0.25em; font-size: 0.875em; }
+.prose-report :deep(pre) { background: rgba(0,0,0,0.4); padding: 0.75em 1em; border-radius: 0.5em; overflow-x: auto; margin: 0.5em 0; }
+.prose-report :deep(pre code) { background: none; padding: 0; }
+.prose-report :deep(blockquote) { border-left: 3px solid rgba(139,92,246,0.4); padding-left: 0.75em; margin: 0.5em 0; color: #9ca3af; }
+.prose-report :deep(hr) { border-color: rgba(255,255,255,0.1); margin: 1em 0; }
+.prose-report :deep(a) { color: #a78bfa; text-decoration: underline; }
+.prose-report :deep(table) { width: 100%; border-collapse: collapse; margin: 0.5em 0; }
+.prose-report :deep(th), .prose-report :deep(td) { border: 1px solid rgba(255,255,255,0.1); padding: 0.4em 0.6em; text-align: left; }
+.prose-report :deep(th) { background: rgba(255,255,255,0.05); font-weight: 600; }
 </style>

@@ -48,6 +48,10 @@ export const resolvers: ResolverMap<RequestCradle> = {
     async entries(this: RequestCradle, parent: { id: string }) {
       return this.projectsService.activityEntries(parent.id)
     },
+    async diagnosticsReport(this: RequestCradle, parent: { reportId: string | null }) {
+      if (!parent.reportId) return null
+      return this.projectsService.diagnosticsReportById(parent.reportId)
+    },
   },
   Mutation: {
     projects: () => ({}),
@@ -149,6 +153,7 @@ export const resolvers: ResolverMap<RequestCradle> = {
           taskName: string
           status: string
           message?: string
+          reportId?: string
         }
       },
       ctx: any,

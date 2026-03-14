@@ -72,7 +72,9 @@ export const typeDefs = `
     workflowId: String!
     type: String!
     status: String!
+    reportId: ID
     entries: [ProjectsActivityEntry!]!
+    diagnosticsReport: ProjectsDiagnosticsReport
     startedAt: String!
     completedAt: String
   }
@@ -103,6 +105,7 @@ export const typeDefs = `
     taskName: String!
     status: String!
     message: String
+    reportId: ID
   }
 
   type ProjectsProjectSearch {

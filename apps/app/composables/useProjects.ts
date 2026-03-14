@@ -48,6 +48,8 @@ interface ProjectActivity {
   workflowId: string
   type: string
   status: string
+  reportId: string | null
+  diagnosticsReport: ProjectDiagnosticsReport | null
   entries: ProjectActivityEntry[]
   startedAt: string
   completedAt: string | null
@@ -237,7 +239,7 @@ const SEARCH_QUERY = `
             statusReport { id issues servicesOk servicesMissing outdatedPatterns checkedAt }
             commits { sha message url }
             diagnosticsReport { id report createdAt }
-            activities { id workflowId type status startedAt completedAt entries { id taskName status message createdAt } }
+            activities { id workflowId type status reportId startedAt completedAt diagnosticsReport { id report createdAt } entries { id taskName status message createdAt } }
           }
         }
       }

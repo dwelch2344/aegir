@@ -8,6 +8,7 @@ export async function logProjectActivity(input: {
   taskName: string
   status: string
   message?: string
+  reportId?: string
 }) {
   try {
     await fetch(config.projects.graphqlUrl, {

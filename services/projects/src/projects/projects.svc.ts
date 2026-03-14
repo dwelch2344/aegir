@@ -179,10 +179,11 @@ export default class ProjectsService {
       workflowId: string
       type: string
       status: string
+      reportId: string | null
       startedAt: string
       completedAt: string | null
     }>(
-      `SELECT id, project_id, workflow_id, type, status, started_at, completed_at
+      `SELECT id, project_id, workflow_id, type, status, report_id, started_at, completed_at
        FROM project_activity WHERE project_id = :projectId ORDER BY started_at DESC LIMIT 20`,
       { projectId },
     )
@@ -204,6 +205,14 @@ export default class ProjectsService {
     )
   }
 
+  async diagnosticsReportById(id: string) {
+    const rows = await this.db.query<{ id: string; projectId: string; report: string; createdAt: string }>(
+      `SELECT id, project_id, report, created_at FROM project_diagnostics_report WHERE id = :id`,
+      { id },
+    )
+    return rows[0] ?? null
+  }
+
   async logActivity(input: {
     projectId: string
     workflowId: string
@@ -211,6 +220,7 @@ export default class ProjectsService {
     taskName: string
     status: string
     message?: string
+    reportId?: string
   }) {
     // Upsert activity record
     let activityRows = await this.db.query<{ id: string }>(
@@ -233,10 +243,15 @@ export default class ProjectsService {
 
     // If this is a terminal status for the activity, update it
     if (input.status === 'COMPLETED' || input.status === 'FAILED') {
-      await this.db.query(`UPDATE project_activity SET status = :status, completed_at = now() WHERE id = :id`, {
-        id: activityId,
-        status: input.status,
-      })
+      const reportClause = input.reportId ? ', report_id = :reportId' : ''
+      await this.db.query(
+        `UPDATE project_activity SET status = :status, completed_at = now()${reportClause} WHERE id = :id`,
+        {
+          id: activityId,
+          status: input.status,
+          ...(input.reportId ? { reportId: input.reportId } : {}),
+        },
+      )
     }
 
     // Insert log entry
