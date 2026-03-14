@@ -1,6 +1,7 @@
 import type { ResolverMap } from '@moribashi/graphql'
 import mercurius from 'mercurius'
 import type ConversationsService from './conversations/conversations.svc.js'
+import { sendChatStartCommand, sendChatMessageCommand } from './kafka-bridge.js'
 
 const { withFilter } = mercurius
 
@@ -98,10 +99,15 @@ export const resolvers: ResolverMap<RequestCradle> = {
       ctx: any,
     ) {
       const { conversationId, text, projectId } = args.input
-      const orchestrationUrl = process.env.ORCHESTRATION_URL || 'http://localhost:4010'
 
       // Save user message
       const userMessage = await this.conversationsService.addMessage({ conversationId, role: 'user', text })
+
+      // Publish to subscription so user message appears in real-time
+      ctx.pubsub?.publish({
+        topic: 'AGENTS_MESSAGE_ADDED',
+        payload: { agentsMessageAdded: userMessage },
+      })
 
       // Auto-title from first user message
       const { results: msgs } = await this.conversationsService.messages(conversationId)
@@ -117,28 +123,27 @@ export const resolvers: ResolverMap<RequestCradle> = {
       let workflowId = convo?.workflowId
 
       if (!workflowId) {
-        // First message — start a new persistent conversation workflow
-        const startRes = await fetch(`${orchestrationUrl}/agents/chat/start`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ conversationId, projectId }),
-        })
-        const startData = (await startRes.json()) as { workflowId: string }
-        workflowId = startData.workflowId
+        // First message — publish chat.start command via Kafka
+        await sendChatStartCommand(conversationId, projectId ?? null)
 
-        // Save workflowId on the conversation
+        // The orchestration service will consume this, start the workflow,
+        // and publish a chat.workflow.started event back. For now we use a
+        // placeholder workflowId that will be updated when the event arrives.
+        workflowId = `pending-${conversationId}`
         await this.conversationsService.update(conversationId, { workflowId })
 
         // Brief pause so Conductor schedules the WAIT task before we signal it
-        await new Promise((r) => setTimeout(r, 1000))
+        await new Promise((r) => setTimeout(r, 1500))
+
+        // Re-fetch to get the real workflowId (set by the Kafka event handler)
+        const {
+          results: [updated],
+        } = await this.conversationsService.search({ idIn: [conversationId] })
+        workflowId = updated?.workflowId ?? workflowId
       }
 
-      // Signal the WAIT task with the user's message
-      await fetch(`${orchestrationUrl}/agents/chat/message`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ workflowId, text }),
-      })
+      // Signal the WAIT task with the user's message via Kafka
+      await sendChatMessageCommand(conversationId, workflowId, text)
 
       return { userMessage, workflowId }
     },

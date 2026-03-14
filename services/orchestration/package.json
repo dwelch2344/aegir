@@ -12,7 +12,9 @@
   },
   "dependencies": {
     "@aegir/common": "workspace:*",
+    "@aegir/kafka": "workspace:*",
     "fastify": "^5.0.0",
+    "kafkajs": "^2.2.4",
     "yaml": "^2.8.2"
   },
   "devDependencies": {

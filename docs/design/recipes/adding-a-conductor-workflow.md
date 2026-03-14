@@ -8,6 +8,7 @@ This recipe covers how to add a new orchestrated workflow using Netflix Conducto
 
 - Orchestration service running (`services/orchestration/`)
 - Conductor instance available (default: `http://conductor:8080/api`)
+- Kafka (Redpanda) running with `@aegir/kafka` package available
 - Target domain service (e.g., projects, agents) already exists
 
 ---
@@ -157,21 +158,35 @@ const res = await fetch(config.projects.graphqlUrl, {
 })
 ```
 
-**Streaming long operations** (Claude, builds):
+**Streaming long operations via Kafka** (Claude, builds):
+
+Workers can publish stream events to Kafka for real-time UI updates via WebSocket:
 
 ```typescript
-import { spawn } from 'node:child_process'
+import { publishChatEvent } from '../kafka-bridge.js'
+import type { ChatStreamChunkEvent } from '@aegir/kafka'
 
-const proc = spawn('claude', ['--output-format', 'text'], { cwd: localPath })
+const proc = spawn('claude', ['--output-format', 'stream-json'], { cwd: localPath })
 let output = ''
 proc.stdout.on('data', (chunk) => {
   output += chunk.toString()
-  // Throttle updates to Conductor logs
+
+  // Publish stream chunk via Kafka → agents service → WebSocket
+  const event: ChatStreamChunkEvent = {
+    type: 'chat.stream.chunk',
+    conversationId,
+    text: output,
+    done: false,
+    timestamp: new Date().toISOString(),
+  }
+  publishChatEvent(conversationId, event).catch(() => {})
 })
 await new Promise((resolve, reject) => {
   proc.on('close', (code) => code === 0 ? resolve(null) : reject(new Error(`Exit ${code}`)))
 })
 ```
+
+The Kafka bridge in the agents service consumes these events and publishes them to the Mercurius WebSocket pubsub, so connected clients get real-time updates without direct GraphQL calls from workers.
 
 **Activity logging** (real-time UI updates):
 
@@ -207,9 +222,11 @@ The worker runner polls Conductor for each registered task type (1s interval) an
 
 ---
 
-## 4. Add a REST Trigger (`src/app.ts`)
+## 4. Add a Trigger (REST or Kafka)
 
-Workflows are started via REST endpoints on the orchestration service:
+### Option A: REST Trigger (`src/app.ts`)
+
+Workflows can be started via REST endpoints on the orchestration service:
 
 ```typescript
 fastify.post<{ Body: { someId: number; someParam: string } }>(
@@ -225,7 +242,48 @@ fastify.post<{ Body: { someId: number; someParam: string } }>(
 )
 ```
 
-`startWorkflow()` posts to Conductor's `/workflow` API and returns the workflow instance ID.
+### Option B: Kafka Command (preferred for async workflows)
+
+For workflows that are triggered asynchronously (e.g., agent chat), domain services produce
+a command message to a Kafka topic and the orchestration service consumes it:
+
+**Domain service (producer):**
+
+```typescript
+import { encode, TOPICS, type AgentChatCommand } from '@aegir/kafka'
+
+const cmd: AgentChatCommand = {
+  type: 'chat.start',
+  conversationId,
+  projectId,
+  timestamp: new Date().toISOString(),
+}
+await producer.send({
+  topic: TOPICS.AGENT_CHAT_COMMANDS,
+  messages: [{ key: conversationId, value: encode(cmd) }],
+})
+```
+
+**Orchestration service (consumer) — `kafka-bridge.ts`:**
+
+```typescript
+await consumer.subscribe({ topic: TOPICS.AGENT_CHAT_COMMANDS, fromBeginning: false })
+await consumer.run({
+  eachMessage: async ({ message }) => {
+    const cmd = decode<AgentChatCommand>(message.value)
+    if (cmd?.type === 'chat.start') {
+      const workflowId = await startWorkflow('agent_chat_conversation', { ... })
+      // Publish confirmation event back
+      await producer.send({ topic: TOPICS.AGENT_CHAT_EVENTS, messages: [...] })
+    }
+  },
+})
+```
+
+Use Kafka commands when:
+- The caller doesn't need a synchronous response (fire-and-forget)
+- You want to decouple services (no REST dependency)
+- You need guaranteed delivery and replay capability
 
 ---
 
@@ -297,6 +355,8 @@ function subscribeToActivity(entityId: number, onEvent: (event: any) => void) {
 
 ## Data Flow Summary
 
+### REST Path (synchronous)
+
 ```
 User Action (Frontend)
   ↓ GraphQL mutation
@@ -313,6 +373,25 @@ Activity logged → pubsub emitted
 Frontend updates UI in real-time
 ```
 
+### Kafka Path (asynchronous, preferred for agent chat)
+
+```
+User Action (Frontend)
+  ↓ GraphQL mutation (sendMessage)
+Agents Service
+  ↓ Kafka produce: agents.chat.commands
+Orchestration Service (Kafka consumer)
+  ↓ startWorkflow() / signalWaitTask()
+  ↓ Kafka produce: agents.chat.events (workflow.started)
+Conductor
+  ↓ queues tasks
+Workers poll & execute
+  ↓ Kafka produce: agents.chat.events (stream.chunk, response.complete)
+Agents Service (Kafka consumer)
+  ↓ bridges to Mercurius WebSocket pubsub
+Frontend receives real-time updates via subscription
+```
+
 ---
 
 ## Checklist
@@ -321,7 +400,9 @@ Frontend updates UI in real-time
 - [ ] Workflow definition added to `definitions.ts`
 - [ ] Worker function implemented in `src/workers/`
 - [ ] Worker registered in `worker-runner.ts`
-- [ ] REST trigger endpoint added to `app.ts`
-- [ ] Domain service resolver wired to orchestration REST
+- [ ] Trigger added: REST endpoint in `app.ts` _or_ Kafka consumer in `kafka-bridge.ts`
+- [ ] Kafka topics registered in `@aegir/kafka` `topics.ts` (if using Kafka path)
+- [ ] Domain service resolver wired to orchestration (REST or Kafka commands)
+- [ ] Worker publishes events via Kafka for real-time streaming (if applicable)
 - [ ] Frontend composable calls mutation + subscribes to activity
 - [ ] Tested end-to-end: trigger → worker executes → activity appears in UI
