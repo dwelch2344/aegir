@@ -69,6 +69,28 @@ export const resolvers: ResolverMap<RequestCradle> = {
       })
       return message
     },
+    async streamChunk(
+      this: RequestCradle,
+      _: unknown,
+      args: { input: { conversationId: string; text: string } },
+      ctx: any,
+    ) {
+      // Publish a synthetic message to the subscription without persisting.
+      // The UI will replace the "thinking" placeholder with the partial content.
+      ctx.pubsub?.publish({
+        topic: 'AGENTS_MESSAGE_ADDED',
+        payload: {
+          agentsMessageAdded: {
+            id: `stream-${Date.now()}`,
+            conversationId: args.input.conversationId,
+            role: 'assistant',
+            text: args.input.text,
+            createdAt: new Date().toISOString(),
+          },
+        },
+      })
+      return true
+    },
     async sendMessage(
       this: RequestCradle,
       _: unknown,

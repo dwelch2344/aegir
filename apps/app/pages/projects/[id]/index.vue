@@ -100,6 +100,10 @@ function handleAgentKeydown(e: KeyboardEvent) {
   }
 }
 
+function stripContextPrefix(text: string): string {
+  return text.replace(/^\[Project context:[^\]]*\]\n\n/, '')
+}
+
 function handleNewAgentChat() {
   agent.disconnect()
   agent.newConversation()
@@ -881,7 +885,7 @@ onUnmounted(() => {
 
               <div v-else class="max-w-[80%]">
                 <div class="rounded-2xl rounded-tr-sm bg-emerald-600 px-4 py-2.5 text-sm text-white whitespace-pre-wrap">
-                  {{ msg.text }}
+                  {{ stripContextPrefix(msg.text) }}
                 </div>
               </div>
             </div>

@@ -11,6 +11,7 @@ export const typeDefs = `
     label: String!
     email: String!
     organizationId: Int
+    memberships: [Membership!]!
   }
 
   type Organization @key(fields: "id") {
@@ -19,7 +20,43 @@ export const typeDefs = `
     name: String!
     keycloakId: String
     protected: Boolean!
+    memberships: [Membership!]!
+    relationships: [OrgRelationship!]!
   }
+
+  type Role @key(fields: "id") {
+    id: Int!
+    key: String!
+    name: String!
+    permissions: [RolePermission!]!
+  }
+
+  type RolePermission {
+    id: Int!
+    roleId: Int!
+    permission: String!
+    relationshipType: String!
+  }
+
+  type Membership @key(fields: "id") {
+    id: Int!
+    identityId: Int!
+    organizationId: Int!
+    identity: Identity!
+    organization: Organization!
+    roles: [Role!]!
+  }
+
+  type OrgRelationship {
+    id: Int!
+    ownerOrgId: Int!
+    relatedOrgId: Int!
+    relationshipType: String!
+    ownerOrg: Organization!
+    relatedOrg: Organization!
+  }
+
+  # --- Queries ---
 
   type IamIdentitySearch {
     results: [Identity!]!
@@ -49,10 +86,56 @@ export const typeDefs = `
     search(input: IamOrganizationSearchInput!): IamOrganizationSearch!
   }
 
+  type IamRoleSearch {
+    results: [Role!]!
+  }
+
+  input IamRoleSearchInput {
+    idIn: [Int!]
+    keyIn: [String!]
+  }
+
+  type IamRoles {
+    search(input: IamRoleSearchInput!): IamRoleSearch!
+  }
+
+  type IamMembershipSearch {
+    results: [Membership!]!
+  }
+
+  input IamMembershipSearchInput {
+    idIn: [Int!]
+    identityIdIn: [Int!]
+    organizationIdIn: [Int!]
+  }
+
+  type IamMemberships {
+    search(input: IamMembershipSearchInput!): IamMembershipSearch!
+  }
+
+  type IamOrgRelationshipSearch {
+    results: [OrgRelationship!]!
+  }
+
+  input IamOrgRelationshipSearchInput {
+    ownerOrgIdIn: [Int!]
+    relatedOrgIdIn: [Int!]
+    relationshipTypeIn: [String!]
+  }
+
+  type IamOrgRelationships {
+    search(input: IamOrgRelationshipSearchInput!): IamOrgRelationshipSearch!
+  }
+
   type Iam {
     identities: IamIdentities!
     orgs: IamOrganizations!
+    roles: IamRoles!
+    memberships: IamMemberships!
+    orgRelationships: IamOrgRelationships!
   }
+
+  # --- Mutations ---
 
   type IamIdentitiesOps {
     _placeholder: String
@@ -68,9 +151,58 @@ export const typeDefs = `
     sync(input: [IamOrganizationSyncInput!]!): [Organization!]!
   }
 
+  input IamRoleCreateInput {
+    key: String!
+    name: String!
+  }
+
+  input IamRolePermissionInput {
+    roleId: Int!
+    permission: String!
+    relationshipType: String!
+  }
+
+  type IamRolesOps {
+    create(input: IamRoleCreateInput!): Role!
+    addPermission(input: IamRolePermissionInput!): RolePermission
+    removePermission(input: IamRolePermissionInput!): Boolean!
+  }
+
+  input IamMembershipCreateInput {
+    identityId: Int!
+    organizationId: Int!
+    roleIds: [Int!]
+  }
+
+  input IamMembershipRoleInput {
+    membershipId: Int!
+    roleId: Int!
+  }
+
+  type IamMembershipsOps {
+    create(input: IamMembershipCreateInput!): Membership!
+    delete(membershipId: Int!): Boolean!
+    assignRole(input: IamMembershipRoleInput!): Boolean!
+    removeRole(input: IamMembershipRoleInput!): Boolean!
+  }
+
+  input IamOrgRelationshipCreateInput {
+    ownerOrgId: Int!
+    relatedOrgId: Int!
+    relationshipType: String!
+  }
+
+  type IamOrgRelationshipsOps {
+    create(input: IamOrgRelationshipCreateInput!): OrgRelationship
+    delete(id: Int!): Boolean!
+  }
+
   type IamOps {
     identities: IamIdentitiesOps!
     orgs: IamOrganizationsOps!
+    roles: IamRolesOps!
+    memberships: IamMembershipsOps!
+    orgRelationships: IamOrgRelationshipsOps!
   }
 
   extend type Query {

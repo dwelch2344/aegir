@@ -8,7 +8,16 @@ import type { TaskResult } from '../conductor.js'
 import { config } from '../config.js'
 import { logProjectActivity } from './project-activity.js'
 
-function runClaude(promptFile: string, cwd: string, env: NodeJS.ProcessEnv): Promise<string> {
+interface StreamCallbacks {
+  onChunk: (accumulated: string) => void
+}
+
+function runClaude(
+  promptFile: string,
+  cwd: string,
+  env: NodeJS.ProcessEnv,
+  callbacks?: StreamCallbacks,
+): Promise<string> {
   return new Promise((resolve, reject) => {
     const child = spawn('claude', ['-p', '--output-format', 'text', '--dangerously-skip-permissions'], {
       cwd,
@@ -21,6 +30,7 @@ function runClaude(promptFile: string, cwd: string, env: NodeJS.ProcessEnv): Pro
 
     child.stdout.on('data', (chunk: Buffer) => {
       stdout += chunk.toString()
+      callbacks?.onChunk(stdout)
     })
     child.stderr.on('data', (chunk: Buffer) => {
       stderr += chunk.toString()
@@ -31,8 +41,8 @@ function runClaude(promptFile: string, cwd: string, env: NodeJS.ProcessEnv): Pro
 
     const timer = setTimeout(() => {
       child.kill('SIGTERM')
-      reject(new Error('Claude CLI timed out after 110s'))
-    }, 110_000)
+      reject(new Error('Claude CLI timed out after 5m'))
+    }, 300_000)
 
     child.on('close', (code) => {
       clearTimeout(timer)
@@ -44,6 +54,18 @@ function runClaude(promptFile: string, cwd: string, env: NodeJS.ProcessEnv): Pro
       reject(err)
     })
   })
+}
+
+async function addTaskLog(taskId: string, log: string) {
+  try {
+    await fetch(`${config.conductor.url}/tasks/${taskId}/log`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ log, createdTime: Date.now() }),
+    })
+  } catch {
+    // best effort
+  }
 }
 
 export async function handleProjectRunDiagnostics(task: any): Promise<TaskResult> {
@@ -82,7 +104,27 @@ Keep the report concise and actionable. Use markdown formatting.`
     const env = { ...process.env }
     delete env.CLAUDECODE
 
-    const report = await runClaude(promptFile, localPath, env)
+    let lastStreamAt = 0
+    const STREAM_INTERVAL = 3000
+
+    const report = await runClaude(promptFile, localPath, env, {
+      onChunk(accumulated) {
+        const now = Date.now()
+        if (now - lastStreamAt < STREAM_INTERVAL) return
+        lastStreamAt = now
+
+        addTaskLog(task.taskId, `[streaming] ${accumulated.length} chars so far`)
+
+        logProjectActivity({
+          projectId,
+          workflowId: wfId,
+          type: 'diagnostics',
+          taskName: 'project_run_diagnostics',
+          status: 'RUNNING',
+          message: `Generating report... (${accumulated.length} chars)`,
+        })
+      },
+    })
 
     // Save the report via GraphQL
     const gqlUrl = config.projects.graphqlUrl

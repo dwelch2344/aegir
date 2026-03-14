@@ -210,17 +210,25 @@ export function useAgent() {
         }
         if (msg.type === 'next' && msg.id === 'agent-msg') {
           const incoming = msg.payload.data.agentsMessageAdded as ChatMessage
-          // Remove thinking placeholder if present
-          const thinkingIdx = messages.value.findIndex((m) => m.id.startsWith('thinking-'))
-          if (thinkingIdx !== -1) {
+          const isStreamChunk = incoming.id.startsWith('stream-')
+
+          // Find an existing placeholder to replace: thinking-* or previous stream-*
+          const placeholderIdx = messages.value.findIndex(
+            (m) => m.id.startsWith('thinking-') || m.id.startsWith('stream-'),
+          )
+
+          if (placeholderIdx !== -1) {
             const updated = [...messages.value]
-            updated.splice(thinkingIdx, 1, incoming)
+            updated[placeholderIdx] = incoming
             messages.value = updated
-          } else {
-            // Avoid duplicates
+          } else if (!isStreamChunk) {
+            // Final message — avoid duplicates
             if (!messages.value.some((m) => m.id === incoming.id)) {
               messages.value = [...messages.value, incoming]
             }
+          } else {
+            // First stream chunk, no placeholder yet — append
+            messages.value = [...messages.value, incoming]
           }
         }
       })

@@ -60,12 +60,18 @@ export const typeDefs = `
     workflowId: String!
   }
 
+  input AgentsStreamChunkInput {
+    conversationId: ID!
+    text: String!
+  }
+
   type AgentsConversationsOps {
     create(input: AgentsConversationCreateInput): AgentsConversation!
     update(id: ID!, input: AgentsConversationUpdateInput!): AgentsConversation
     delete(id: ID!): Boolean!
     addMessage(input: AgentsMessageAddInput!): AgentsMessage!
     sendMessage(input: AgentsSendMessageInput!): AgentsSendMessageResult!
+    streamChunk(input: AgentsStreamChunkInput!): Boolean!
   }
 
   type AgentsOps {
