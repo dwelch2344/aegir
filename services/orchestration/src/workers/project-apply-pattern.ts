@@ -1,9 +1,20 @@
 import { execSync } from 'node:child_process'
 import type { TaskResult } from '../conductor.js'
 import { config } from '../config.js'
+import { logProjectActivity } from './project-activity.js'
 
 export async function handleProjectApplyPattern(task: any): Promise<TaskResult> {
   const { projectId, localPath, patternId, params } = task.inputData ?? {}
+  const wfId = task.workflowInstanceId
+
+  await logProjectActivity({
+    projectId,
+    workflowId: wfId,
+    type: 'apply-pattern',
+    taskName: 'project_apply_pattern',
+    status: 'RUNNING',
+    message: `Applying pattern "${patternId}"`,
+  })
 
   try {
     const shipyardBin = config.projects.shipyardBin
@@ -22,6 +33,15 @@ export async function handleProjectApplyPattern(task: any): Promise<TaskResult> 
       cwd: localPath,
     })
 
+    await logProjectActivity({
+      projectId,
+      workflowId: wfId,
+      type: 'apply-pattern',
+      taskName: 'project_apply_pattern',
+      status: 'COMPLETED',
+      message: `Pattern "${patternId}" applied`,
+    })
+
     return {
       workflowInstanceId: task.workflowInstanceId,
       taskId: task.taskId,
@@ -34,6 +54,15 @@ export async function handleProjectApplyPattern(task: any): Promise<TaskResult> 
       logs: [{ log: `Applied pattern "${patternId}" to project ${projectId}`, createdTime: Date.now() }],
     }
   } catch (err: any) {
+    await logProjectActivity({
+      projectId,
+      workflowId: wfId,
+      type: 'apply-pattern',
+      taskName: 'project_apply_pattern',
+      status: 'FAILED',
+      message: err.message,
+    })
+
     return {
       workflowInstanceId: task.workflowInstanceId,
       taskId: task.taskId,

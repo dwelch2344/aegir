@@ -1,10 +1,21 @@
 import { execSync } from 'node:child_process'
-import { writeFileSync, unlinkSync } from 'node:fs'
+import { unlinkSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import type { TaskResult } from '../conductor.js'
+import { logProjectActivity } from './project-activity.js'
 
 export async function handleProjectCommitPush(task: any): Promise<TaskResult> {
   const { projectId, localPath, patternId, commitMessage } = task.inputData ?? {}
+  const wfId = task.workflowInstanceId
+
+  await logProjectActivity({
+    projectId,
+    workflowId: wfId,
+    type: 'apply-pattern',
+    taskName: 'project_commit_push',
+    status: 'RUNNING',
+    message: 'Committing and pushing changes',
+  })
 
   try {
     const message = commitMessage || `shipyard: apply ${patternId}`
@@ -76,6 +87,15 @@ export async function handleProjectCommitPush(task: any): Promise<TaskResult> {
       console.warn(`[project-commit-push] PR creation failed (non-fatal): ${prErr.message}`)
     }
 
+    await logProjectActivity({
+      projectId,
+      workflowId: wfId,
+      type: 'apply-pattern',
+      taskName: 'project_commit_push',
+      status: 'COMPLETED',
+      message: `Pushed to ${branchName}${prUrl ? ` — PR: ${prUrl}` : ''}`,
+    })
+
     return {
       workflowInstanceId: task.workflowInstanceId,
       taskId: task.taskId,
@@ -89,6 +109,15 @@ export async function handleProjectCommitPush(task: any): Promise<TaskResult> {
       ],
     }
   } catch (err: any) {
+    await logProjectActivity({
+      projectId,
+      workflowId: wfId,
+      type: 'apply-pattern',
+      taskName: 'project_commit_push',
+      status: 'FAILED',
+      message: err.message,
+    })
+
     return {
       workflowInstanceId: task.workflowInstanceId,
       taskId: task.taskId,

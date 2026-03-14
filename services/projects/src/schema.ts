@@ -22,6 +22,9 @@ export const typeDefs = `
     services: [ProjectsService!]!
     patterns: [ProjectsPattern!]!
     statusReport: ProjectsStatusReport
+    commits: [ProjectsCommit!]!
+    diagnosticsReport: ProjectsDiagnosticsReport
+    activities: [ProjectsActivity!]!
   }
 
   type ProjectsService {
@@ -48,6 +51,58 @@ export const typeDefs = `
     servicesMissing: Int!
     outdatedPatterns: Int!
     checkedAt: String!
+  }
+
+  type ProjectsCommit {
+    sha: String!
+    message: String!
+    url: String
+  }
+
+  type ProjectsDiagnosticsReport {
+    id: ID!
+    projectId: ID!
+    report: String!
+    createdAt: String!
+  }
+
+  type ProjectsActivity {
+    id: ID!
+    projectId: ID!
+    workflowId: String!
+    type: String!
+    status: String!
+    entries: [ProjectsActivityEntry!]!
+    startedAt: String!
+    completedAt: String
+  }
+
+  type ProjectsActivityEntry {
+    id: ID!
+    activityId: ID!
+    taskName: String!
+    status: String!
+    message: String!
+    createdAt: String!
+  }
+
+  type ProjectsActivityEvent {
+    activityId: ID!
+    projectId: ID!
+    type: String!
+    taskName: String
+    status: String!
+    message: String!
+    timestamp: String!
+  }
+
+  input ProjectsActivityLogInput {
+    projectId: ID!
+    workflowId: String!
+    type: String!
+    taskName: String!
+    status: String!
+    message: String
   }
 
   type ProjectsProjectSearch {
@@ -103,6 +158,11 @@ export const typeDefs = `
     outdatedPatterns: Int!
   }
 
+  input ProjectsDiagnosticsReportInput {
+    projectId: ID!
+    report: String!
+  }
+
   type ProjectsProjectsOps {
     create(input: ProjectsProjectCreateInput!): ProjectsProject!
     update(id: ID!, input: ProjectsProjectUpdateInput!): ProjectsProject
@@ -113,6 +173,9 @@ export const typeDefs = `
     saveStatusReport(input: ProjectsStatusReportInput!): ProjectsStatusReport!
     checkStatus(id: ID!): ProjectsSyncResult!
     applyPattern(id: ID!, patternId: String!, params: String): ProjectsSyncResult!
+    runDiagnostics(id: ID!): ProjectsSyncResult!
+    saveDiagnosticsReport(input: ProjectsDiagnosticsReportInput!): ProjectsDiagnosticsReport!
+    logActivity(input: ProjectsActivityLogInput!): ProjectsActivityEvent!
   }
 
   type ProjectsSyncResult {
@@ -130,5 +193,9 @@ export const typeDefs = `
 
   extend type Mutation {
     projects: ProjectsOps!
+  }
+
+  extend type Subscription {
+    projectsActivityUpdated(projectId: ID!): ProjectsActivityEvent!
   }
 `

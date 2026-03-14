@@ -1,8 +1,19 @@
 import type { TaskResult } from '../conductor.js'
 import { config } from '../config.js'
+import { logProjectActivity } from './project-activity.js'
 
 export async function handleProjectStoreMetadata(task: any): Promise<TaskResult> {
   const { projectId, localPath, manifestRaw, services, patterns } = task.inputData ?? {}
+  const wfId = task.workflowInstanceId
+
+  await logProjectActivity({
+    projectId,
+    workflowId: wfId,
+    type: 'sync',
+    taskName: 'project_store_metadata',
+    status: 'RUNNING',
+    message: 'Storing project metadata',
+  })
 
   try {
     const gqlUrl = config.projects.graphqlUrl
@@ -55,6 +66,15 @@ export async function handleProjectStoreMetadata(task: any): Promise<TaskResult>
       })
     }
 
+    await logProjectActivity({
+      projectId,
+      workflowId: wfId,
+      type: 'sync',
+      taskName: 'project_store_metadata',
+      status: 'COMPLETED',
+      message: `Stored ${services?.length ?? 0} services, ${patterns?.length ?? 0} patterns`,
+    })
+
     return {
       workflowInstanceId: task.workflowInstanceId,
       taskId: task.taskId,
@@ -71,6 +91,15 @@ export async function handleProjectStoreMetadata(task: any): Promise<TaskResult>
       ],
     }
   } catch (err: any) {
+    await logProjectActivity({
+      projectId,
+      workflowId: wfId,
+      type: 'sync',
+      taskName: 'project_store_metadata',
+      status: 'FAILED',
+      message: err.message,
+    })
+
     return {
       workflowInstanceId: task.workflowInstanceId,
       taskId: task.taskId,

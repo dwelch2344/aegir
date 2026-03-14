@@ -377,6 +377,7 @@ export const projectApplyPatternWorkflow: WorkflowDef = {
       taskReferenceName: 'project_reparse_manifest_ref',
       type: 'SIMPLE',
       inputParameters: {
+        projectId: '${workflow.input.projectId}',
         localPath: '${project_apply_pattern_ref.output.localPath}',
       },
     },
@@ -399,6 +400,42 @@ export const projectApplyPatternWorkflow: WorkflowDef = {
     pushed: '${project_commit_push_ref.output.pushed}',
     branchName: '${project_commit_push_ref.output.branchName}',
     prUrl: '${project_commit_push_ref.output.prUrl}',
+  },
+}
+
+export const projectDiagnosticsTaskDefs: TaskDef[] = [
+  {
+    name: 'project_run_diagnostics',
+    description: 'Runs Claude in the project folder to produce a diagnostic report',
+    retryCount: 0,
+    retryLogic: 'FIXED',
+    retryDelaySeconds: 5,
+    timeoutSeconds: 180,
+    responseTimeoutSeconds: 180,
+    timeoutPolicy: 'TIME_OUT_WF',
+    ownerEmail: projectsOwner,
+  },
+]
+
+export const projectDiagnosticsWorkflow: WorkflowDef = {
+  name: 'project_diagnostics',
+  description: 'Run AI-powered diagnostics on a synced project',
+  version: 1,
+  schemaVersion: 2,
+  ownerEmail: projectsOwner,
+  tasks: [
+    {
+      name: 'project_run_diagnostics',
+      taskReferenceName: 'project_run_diagnostics_ref',
+      type: 'SIMPLE',
+      inputParameters: {
+        projectId: '${workflow.input.projectId}',
+        localPath: '${workflow.input.localPath}',
+      },
+    },
+  ],
+  outputParameters: {
+    report: '${project_run_diagnostics_ref.output.report}',
   },
 }
 
@@ -460,6 +497,7 @@ export const projectSyncWorkflow: WorkflowDef = {
       taskReferenceName: 'project_parse_manifest_ref',
       type: 'SIMPLE',
       inputParameters: {
+        projectId: '${workflow.input.projectId}',
         localPath: '${project_clone_ref.output.localPath}',
       },
     },

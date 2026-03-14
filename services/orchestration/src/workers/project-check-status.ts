@@ -1,9 +1,20 @@
 import { execSync } from 'node:child_process'
 import type { TaskResult } from '../conductor.js'
 import { config } from '../config.js'
+import { logProjectActivity } from './project-activity.js'
 
 export async function handleProjectCheckStatus(task: any): Promise<TaskResult> {
   const { projectId, localPath } = task.inputData ?? {}
+  const wfId = task.workflowInstanceId
+
+  await logProjectActivity({
+    projectId,
+    workflowId: wfId,
+    type: 'check-status',
+    taskName: 'project_check_status',
+    status: 'RUNNING',
+    message: 'Running shipyard status check',
+  })
 
   try {
     // Run shipyard status on the project
@@ -37,6 +48,15 @@ export async function handleProjectCheckStatus(task: any): Promise<TaskResult> {
       }),
     })
 
+    await logProjectActivity({
+      projectId,
+      workflowId: wfId,
+      type: 'check-status',
+      taskName: 'project_check_status',
+      status: 'COMPLETED',
+      message: `${report.issues.length} issues found`,
+    })
+
     return {
       workflowInstanceId: task.workflowInstanceId,
       taskId: task.taskId,
@@ -45,6 +65,15 @@ export async function handleProjectCheckStatus(task: any): Promise<TaskResult> {
       logs: [{ log: `Status check complete: ${report.issues.length} issues found`, createdTime: Date.now() }],
     }
   } catch (err: any) {
+    await logProjectActivity({
+      projectId,
+      workflowId: wfId,
+      type: 'check-status',
+      taskName: 'project_check_status',
+      status: 'FAILED',
+      message: err.message,
+    })
+
     return {
       workflowInstanceId: task.workflowInstanceId,
       taskId: task.taskId,

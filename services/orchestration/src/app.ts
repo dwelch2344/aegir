@@ -9,6 +9,8 @@ import {
   projectApplyPatternWorkflow,
   projectCheckStatusTaskDefs,
   projectCheckStatusWorkflow,
+  projectDiagnosticsTaskDefs,
+  projectDiagnosticsWorkflow,
   projectSyncTaskDefs,
   projectSyncWorkflow,
   selectHealthAcaWorkflow,
@@ -85,7 +87,7 @@ export async function buildApp() {
     let url = repoUrl
     let br = branch
     if (!url) {
-      const gqlUrl = process.env.PROJECTS_GRAPHQL_URL || 'http://localhost:4004/graphql'
+      const gqlUrl = config.projects.graphqlUrl
       const res = await fetch(gqlUrl, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -195,6 +197,30 @@ export async function buildApp() {
     },
   )
 
+  // Project diagnostics — trigger Claude diagnostic workflow
+  fastify.post<{ Body: { projectId: string } }>('/projects/diagnostics', async (req) => {
+    const { projectId } = req.body
+
+    // Look up localPath
+    const gqlUrl = config.projects.graphqlUrl
+    const res = await fetch(gqlUrl, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        query: `query($input: ProjectsProjectSearchInput!) {
+          projects { projects { search(input: $input) { results { localPath } } } }
+        }`,
+        variables: { input: { idIn: [projectId] } },
+      }),
+    })
+    const json = (await res.json()) as any
+    const localPath = json.data?.projects?.projects?.search?.results?.[0]?.localPath
+    if (!localPath) throw new Error(`Project ${projectId} has no localPath — sync first`)
+
+    const workflowId = await startWorkflow('project_diagnostics', { projectId, localPath })
+    return { workflowId }
+  })
+
   fastify.addHook('onClose', () => ac.abort())
 
   return {
@@ -224,6 +250,7 @@ async function registerWithRetry(maxAttempts = 20, delayMs = 3000) {
         ...projectSyncTaskDefs,
         ...projectCheckStatusTaskDefs,
         ...projectApplyPatternTaskDefs,
+        ...projectDiagnosticsTaskDefs,
       ]
       await registerTaskDefs(allTaskDefs)
       console.log(`[orchestration] registered ${allTaskDefs.length} task definitions`)
@@ -235,6 +262,7 @@ async function registerWithRetry(maxAttempts = 20, delayMs = 3000) {
         projectSyncWorkflow,
         projectCheckStatusWorkflow,
         projectApplyPatternWorkflow,
+        projectDiagnosticsWorkflow,
       ]
       for (const wf of allWorkflows) {
         await registerWorkflow(wf)

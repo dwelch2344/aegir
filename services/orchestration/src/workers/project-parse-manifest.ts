@@ -1,9 +1,22 @@
-import { readFileSync, existsSync } from 'node:fs'
+import { existsSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import type { TaskResult } from '../conductor.js'
+import { logProjectActivity } from './project-activity.js'
 
 export async function handleProjectParseManifest(task: any): Promise<TaskResult> {
   const { localPath } = task.inputData ?? {}
+  const wfId = task.workflowInstanceId
+  // projectId may come from workflow input — not directly available here, derive from parent task
+  const projectId = task.inputData?.projectId
+
+  await logProjectActivity({
+    projectId: projectId ?? 'unknown',
+    workflowId: wfId,
+    type: 'sync',
+    taskName: 'project_parse_manifest',
+    status: 'RUNNING',
+    message: 'Parsing shipyard.manifest',
+  })
 
   try {
     const manifestPath = join(localPath, 'shipyard.manifest')
@@ -41,6 +54,15 @@ export async function handleProjectParseManifest(task: any): Promise<TaskResult>
       appliedAt: r.applied_at ?? null,
     }))
 
+    await logProjectActivity({
+      projectId: projectId ?? 'unknown',
+      workflowId: wfId,
+      type: 'sync',
+      taskName: 'project_parse_manifest',
+      status: 'COMPLETED',
+      message: `Parsed: ${services.length} services, ${patterns.length} patterns`,
+    })
+
     return {
       workflowInstanceId: task.workflowInstanceId,
       taskId: task.taskId,
@@ -62,6 +84,15 @@ export async function handleProjectParseManifest(task: any): Promise<TaskResult>
       ],
     }
   } catch (err: any) {
+    await logProjectActivity({
+      projectId: projectId ?? 'unknown',
+      workflowId: wfId,
+      type: 'sync',
+      taskName: 'project_parse_manifest',
+      status: 'FAILED',
+      message: err.message,
+    })
+
     return {
       workflowInstanceId: task.workflowInstanceId,
       taskId: task.taskId,

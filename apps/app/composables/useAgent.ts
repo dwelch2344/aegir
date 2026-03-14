@@ -17,8 +17,13 @@ export interface Conversation {
   updatedAt: string
 }
 
-const IAM_URL = 'ws://localhost:4001/graphql'
-const AGENTS_URL = 'ws://localhost:4003/graphql'
+function getWsUrls() {
+  const config = useRuntimeConfig()
+  return {
+    iamWsUrl: config.public.iamWsUrl as string,
+    agentsWsUrl: config.public.agentsWsUrl as string,
+  }
+}
 
 async function gql<T>(query: string, variables?: Record<string, unknown>): Promise<T> {
   const config = useRuntimeConfig()
@@ -178,7 +183,8 @@ export function useAgent() {
     agentSocket = null
 
     return new Promise((resolve) => {
-      const ws = new WebSocket(AGENTS_URL, 'graphql-transport-ws')
+      const { agentsWsUrl } = getWsUrls()
+      const ws = new WebSocket(agentsWsUrl, 'graphql-transport-ws')
       agentSocket = ws
 
       const query = `subscription($conversationId: ID!) {
@@ -319,7 +325,8 @@ export function useAgent() {
     }
     connecting.value = true
 
-    const ws = new WebSocket(IAM_URL, 'graphql-transport-ws')
+    const { iamWsUrl } = getWsUrls()
+    const ws = new WebSocket(iamWsUrl, 'graphql-transport-ws')
     notifSocket = ws
 
     const variables: Record<string, unknown> = {}

@@ -12,6 +12,9 @@ export default defineNuxtConfig({
     gatewayUrl: process.env.GATEWAY_URL_INTERNAL || 'http://localhost:4000/graphql',
     public: {
       gatewayUrl: process.env.GATEWAY_URL || '/api/graphql',
+      iamWsUrl: process.env.IAM_WS_URL || 'ws://localhost:4001/graphql',
+      agentsWsUrl: process.env.AGENTS_WS_URL || 'ws://localhost:4003/graphql',
+      projectsWsUrl: process.env.PROJECTS_WS_URL || 'ws://localhost:4004/graphql',
     },
   },
 

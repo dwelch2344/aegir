@@ -61,6 +61,7 @@ export async function buildApp() {
     schema: typeDefs,
     resolvers: bindResolversToScope(resolvers),
     graphiql: true,
+    subscription: true,
     context: async (request: any) => ({ scope: request.scope }),
   })
 

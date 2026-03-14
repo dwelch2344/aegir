@@ -1,3 +1,4 @@
+import { execSync } from 'node:child_process'
 import type { Db } from '@moribashi/pg'
 
 export interface Project {
@@ -169,6 +170,147 @@ export default class ProjectsService {
       { projectId },
     )
     return rows[0] ?? null
+  }
+
+  async activities(projectId: string) {
+    const rows = await this.db.query<{
+      id: string
+      projectId: string
+      workflowId: string
+      type: string
+      status: string
+      startedAt: string
+      completedAt: string | null
+    }>(
+      `SELECT id, project_id, workflow_id, type, status, started_at, completed_at
+       FROM project_activity WHERE project_id = :projectId ORDER BY started_at DESC LIMIT 20`,
+      { projectId },
+    )
+    return rows
+  }
+
+  async activityEntries(activityId: string) {
+    return this.db.query<{
+      id: string
+      activityId: string
+      taskName: string
+      status: string
+      message: string
+      createdAt: string
+    }>(
+      `SELECT id, activity_id, task_name, status, message, created_at
+       FROM project_activity_log WHERE activity_id = :activityId ORDER BY created_at`,
+      { activityId },
+    )
+  }
+
+  async logActivity(input: {
+    projectId: string
+    workflowId: string
+    type: string
+    taskName: string
+    status: string
+    message?: string
+  }) {
+    // Upsert activity record
+    let activityRows = await this.db.query<{ id: string }>(
+      `SELECT id FROM project_activity WHERE workflow_id = :workflowId`,
+      { workflowId: input.workflowId },
+    )
+
+    let activityId: string
+    if (activityRows.length === 0) {
+      const created = await this.db.query<{ id: string }>(
+        `INSERT INTO project_activity (project_id, workflow_id, type, status)
+         VALUES (:projectId, :workflowId, :type, 'RUNNING')
+         RETURNING id`,
+        { projectId: input.projectId, workflowId: input.workflowId, type: input.type },
+      )
+      activityId = created[0].id
+    } else {
+      activityId = activityRows[0].id
+    }
+
+    // If this is a terminal status for the activity, update it
+    if (input.status === 'COMPLETED' || input.status === 'FAILED') {
+      await this.db.query(`UPDATE project_activity SET status = :status, completed_at = now() WHERE id = :id`, {
+        id: activityId,
+        status: input.status,
+      })
+    }
+
+    // Insert log entry
+    await this.db.query(
+      `INSERT INTO project_activity_log (activity_id, task_name, status, message)
+       VALUES (:activityId, :taskName, :status, :message)`,
+      {
+        activityId,
+        taskName: input.taskName,
+        status: input.status,
+        message: input.message ?? '',
+      },
+    )
+
+    return {
+      activityId,
+      projectId: input.projectId,
+      type: input.type,
+      taskName: input.taskName,
+      status: input.status,
+      message: input.message ?? '',
+      timestamp: new Date().toISOString(),
+    }
+  }
+
+  async commits(projectId: string, repoUrl: string, localPath: string | null) {
+    if (!localPath) return []
+    try {
+      const log = execSync('git log --oneline --no-decorate -30', {
+        cwd: localPath,
+        encoding: 'utf-8',
+        timeout: 10_000,
+      }).trim()
+
+      // Derive GitHub base URL from repoUrl
+      let githubBase = ''
+      if (repoUrl) {
+        githubBase = repoUrl.replace(/\.git$/, '').replace(/^git@github\.com:/, 'https://github.com/')
+      }
+
+      return log
+        .split('\n')
+        .filter(Boolean)
+        .map((line) => {
+          const spaceIdx = line.indexOf(' ')
+          const sha = line.slice(0, spaceIdx)
+          return {
+            sha,
+            message: line.slice(spaceIdx + 1),
+            url: githubBase ? `${githubBase}/commit/${sha}` : null,
+          }
+        })
+    } catch {
+      return []
+    }
+  }
+
+  async latestDiagnosticsReport(projectId: string) {
+    const rows = await this.db.query<{ id: string; projectId: string; report: string; createdAt: string }>(
+      `SELECT id, project_id, report, created_at
+       FROM project_diagnostics_report WHERE project_id = :projectId ORDER BY created_at DESC LIMIT 1`,
+      { projectId },
+    )
+    return rows[0] ?? null
+  }
+
+  async saveDiagnosticsReport(input: { projectId: string; report: string }) {
+    const rows = await this.db.query<{ id: string; projectId: string; report: string; createdAt: string }>(
+      `INSERT INTO project_diagnostics_report (project_id, report)
+       VALUES (:projectId, :report)
+       RETURNING id, project_id, report, created_at`,
+      { projectId: input.projectId, report: input.report },
+    )
+    return rows[0]
   }
 
   async saveStatusReport(report: {

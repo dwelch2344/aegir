@@ -15,6 +15,7 @@ import { handleProjectApplyPattern } from './workers/project-apply-pattern.js'
 import { handleProjectCheckStatus } from './workers/project-check-status.js'
 import { handleProjectClone } from './workers/project-clone.js'
 import { handleProjectCommitPush } from './workers/project-commit-push.js'
+import { handleProjectRunDiagnostics } from './workers/project-run-diagnostics.js'
 import { handleProjectParseManifest } from './workers/project-parse-manifest.js'
 import { handleProjectStoreMetadata } from './workers/project-store-metadata.js'
 import { handleValidateIdentity } from './workers/validate-identity.js'
@@ -43,6 +44,7 @@ const handlers: Record<string, TaskHandler> = {
   project_check_status: handleProjectCheckStatus,
   project_apply_pattern: handleProjectApplyPattern,
   project_commit_push: handleProjectCommitPush,
+  project_run_diagnostics: handleProjectRunDiagnostics,
 }
 
 const WORKER_ID = `orchestration-${process.pid}`

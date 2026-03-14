@@ -23,6 +23,46 @@ interface ProjectStatusReport {
   checkedAt: string
 }
 
+interface ProjectCommit {
+  sha: string
+  message: string
+  url: string | null
+}
+
+interface ProjectDiagnosticsReport {
+  id: string
+  report: string
+  createdAt: string
+}
+
+interface ProjectActivityEntry {
+  id: string
+  taskName: string
+  status: string
+  message: string
+  createdAt: string
+}
+
+interface ProjectActivity {
+  id: string
+  workflowId: string
+  type: string
+  status: string
+  entries: ProjectActivityEntry[]
+  startedAt: string
+  completedAt: string | null
+}
+
+export interface ProjectActivityEvent {
+  activityId: string
+  projectId: string
+  type: string
+  taskName: string | null
+  status: string
+  message: string
+  timestamp: string
+}
+
 interface Project {
   id: string
   organizationId: number
@@ -38,6 +78,9 @@ interface Project {
   services: ProjectService[]
   patterns: ProjectPattern[]
   statusReport: ProjectStatusReport | null
+  commits: ProjectCommit[]
+  diagnosticsReport: ProjectDiagnosticsReport | null
+  activities: ProjectActivity[]
 }
 
 const projects = ref<Project[]>([])
@@ -125,6 +168,47 @@ export function useProjects() {
     return data.projects.projects.applyPattern
   }
 
+  async function runDiagnostics(id: string) {
+    const data = await gql<any>(gatewayUrl, RUN_DIAGNOSTICS_MUTATION, { id })
+    return data.projects.projects.runDiagnostics
+  }
+
+  function subscribeToActivity(projectId: string, onEvent: (event: ProjectActivityEvent) => void): () => void {
+    const runtimeConfig = useRuntimeConfig()
+    const projectsWsUrl = runtimeConfig.public.projectsWsUrl as string
+    const ws = new WebSocket(projectsWsUrl, 'graphql-transport-ws')
+
+    ws.addEventListener('open', () => {
+      ws.send(JSON.stringify({ type: 'connection_init' }))
+    })
+
+    ws.addEventListener('message', (ev) => {
+      const msg = JSON.parse(ev.data)
+      if (msg.type === 'connection_ack') {
+        ws.send(
+          JSON.stringify({
+            id: 'activity-sub',
+            type: 'subscribe',
+            payload: {
+              query: ACTIVITY_SUBSCRIPTION,
+              variables: { projectId },
+            },
+          }),
+        )
+      }
+      if (msg.type === 'next' && msg.payload?.data?.projectsActivityUpdated) {
+        onEvent(msg.payload.data.projectsActivityUpdated)
+      }
+    })
+
+    return () => {
+      if (ws.readyState === WebSocket.OPEN) {
+        ws.send(JSON.stringify({ id: 'activity-sub', type: 'complete' }))
+        ws.close()
+      }
+    }
+  }
+
   return {
     projects,
     loading,
@@ -135,6 +219,8 @@ export function useProjects() {
     deleteProject,
     checkStatus,
     applyPattern,
+    runDiagnostics,
+    subscribeToActivity,
   }
 }
 
@@ -149,6 +235,9 @@ const SEARCH_QUERY = `
             services { id name type port }
             patterns { id patternId version appliedAt }
             statusReport { id issues servicesOk servicesMissing outdatedPatterns checkedAt }
+            commits { sha message url }
+            diagnosticsReport { id report createdAt }
+            activities { id workflowId type status startedAt completedAt entries { id taskName status message createdAt } }
           }
         }
       }
@@ -183,5 +272,19 @@ const CHECK_STATUS_MUTATION = `
 const APPLY_PATTERN_MUTATION = `
   mutation($id: ID!, $patternId: String!, $params: String) {
     projects { projects { applyPattern(id: $id, patternId: $patternId, params: $params) { projectId workflowId } } }
+  }
+`
+
+const RUN_DIAGNOSTICS_MUTATION = `
+  mutation($id: ID!) {
+    projects { projects { runDiagnostics(id: $id) { projectId workflowId } } }
+  }
+`
+
+const ACTIVITY_SUBSCRIPTION = `
+  subscription($projectId: ID!) {
+    projectsActivityUpdated(projectId: $projectId) {
+      activityId projectId type taskName status message timestamp
+    }
   }
 `
