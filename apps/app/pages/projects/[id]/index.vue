@@ -2,8 +2,16 @@
 const route = useRoute()
 const projectId = route.params.id as string
 
+import { marked } from 'marked'
+
+marked.setOptions({ breaks: true, gfm: true })
+function renderMarkdown(text: string): string {
+  return marked.parse(text, { async: false }) as string
+}
+
 const { fetchProject, syncProject, deleteProject, checkStatus, applyPattern, runDiagnostics, subscribeToActivity } = useProjects()
 const { catalog, fetchCatalog, getEntry } = useCatalog()
+const agent = useAgent()
 
 const project = ref<any>(null)
 const loading = ref(true)
@@ -15,7 +23,7 @@ const confirmDelete = ref(false)
 const deleting = ref(false)
 
 // Tabs
-const activeTab = ref<'overview' | 'patterns' | 'actions'>('overview')
+const activeTab = ref<'overview' | 'patterns' | 'actions' | 'agent'>('overview')
 
 // Apply pattern form
 const showApply = ref(false)
@@ -42,6 +50,60 @@ const diagRunning = ref(false)
 import type { ProjectActivityEvent } from '~/composables/useProjects'
 const activityEvents = ref<ProjectActivityEvent[]>([])
 let unsubActivity: (() => void) | null = null
+
+// Agent chat
+const agentInput = ref('')
+const agentChatContainer = ref<HTMLElement | null>(null)
+const agentTextarea = ref<HTMLTextAreaElement | null>(null)
+
+function autoResizeAgent(el: HTMLTextAreaElement | null) {
+  if (!el) return
+  el.style.height = 'auto'
+  el.style.height = `${el.scrollHeight}px`
+}
+
+watch(agentInput, () => {
+  nextTick(() => autoResizeAgent(agentTextarea.value))
+})
+
+watch(
+  () => agent.messages.value,
+  () => {
+    nextTick(() => {
+      if (agentChatContainer.value) {
+        agentChatContainer.value.scrollTop = agentChatContainer.value.scrollHeight
+      }
+    })
+  },
+  { deep: true },
+)
+
+async function handleAgentSend() {
+  const text = agentInput.value.trim()
+  if (!text) return
+  agentInput.value = ''
+  nextTick(() => autoResizeAgent(agentTextarea.value))
+
+  // Prepend project context to first message in the conversation
+  const isFirst = agent.messages.value.length === 0
+  const contextPrefix = isFirst && project.value
+    ? `[Project context: "${project.value.name}", repo: ${project.value.repoUrl}, branch: ${project.value.branch}, local: ${project.value.localPath || 'not cloned'}]\n\n`
+    : ''
+
+  await agent.sendMessage(contextPrefix + text)
+}
+
+function handleAgentKeydown(e: KeyboardEvent) {
+  if (e.key === 'Enter' && !e.shiftKey) {
+    e.preventDefault()
+    handleAgentSend()
+  }
+}
+
+function handleNewAgentChat() {
+  agent.disconnect()
+  agent.newConversation()
+}
 
 async function load() {
   loading.value = true
@@ -191,6 +253,7 @@ onMounted(() => {
 
 onUnmounted(() => {
   if (unsubActivity) unsubActivity()
+  agent.disconnect()
 })
 </script>
 
@@ -242,6 +305,7 @@ onUnmounted(() => {
             { key: 'overview', label: 'Overview' },
             { key: 'patterns', label: 'Patterns' },
             { key: 'actions', label: 'Actions' },
+            { key: 'agent', label: 'Agent' },
           ]"
           :key="tab.key"
           class="px-4 py-2.5 text-sm font-medium border-b-2 transition-colors -mb-px"
@@ -758,6 +822,96 @@ onUnmounted(() => {
           </div>
         </div>
       </div>
+
+      <!-- ==================== AGENT TAB ==================== -->
+      <ClientOnly>
+        <div v-if="activeTab === 'agent'" class="flex flex-col" style="height: calc(100vh - 14rem)">
+          <!-- Chat header -->
+          <div class="flex items-center justify-between mb-3">
+            <p class="text-sm text-gray-400">
+              Chat with Claude about <span class="text-gray-200">{{ project.name }}</span>
+            </p>
+            <button
+              class="text-xs px-2.5 py-1 rounded bg-gray-800 text-gray-400 hover:text-gray-200 hover:bg-gray-700 transition-colors"
+              @click="handleNewAgentChat"
+            >
+              + New chat
+            </button>
+          </div>
+
+          <!-- Messages -->
+          <div
+            ref="agentChatContainer"
+            class="flex-1 overflow-y-auto rounded-lg bg-gray-800/50 border border-gray-700 px-4 py-4 space-y-4"
+          >
+            <div v-if="agent.messages.value.length === 0" class="flex flex-col items-center justify-center h-full text-center">
+              <div class="w-10 h-10 rounded-full bg-emerald-500/20 flex items-center justify-center mb-3">
+                <svg class="w-5 h-5 text-emerald-400" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" d="M9.813 15.904 9 18.75l-.813-2.846a4.5 4.5 0 0 0-3.09-3.09L2.25 12l2.846-.813a4.5 4.5 0 0 0 3.09-3.09L9 5.25l.813 2.846a4.5 4.5 0 0 0 3.09 3.09L15.75 12l-2.846.813a4.5 4.5 0 0 0-3.09 3.09ZM18.259 8.715 18 9.75l-.259-1.035a3.375 3.375 0 0 0-2.455-2.456L14.25 6l1.036-.259a3.375 3.375 0 0 0 2.455-2.456L18 2.25l.259 1.035a3.375 3.375 0 0 0 2.455 2.456L21.75 6l-1.036.259a3.375 3.375 0 0 0-2.455 2.456Z" />
+                </svg>
+              </div>
+              <p class="text-sm text-gray-400 mb-1">Ask anything about this project</p>
+              <p class="text-xs text-gray-600">Claude has context about the repo, branch, and local clone.</p>
+            </div>
+
+            <div
+              v-for="msg in agent.messages.value"
+              :key="msg.id"
+              class="flex"
+              :class="msg.role === 'user' ? 'justify-end' : 'justify-start'"
+            >
+              <div v-if="msg.role !== 'user'" class="flex items-start gap-3 max-w-[80%]">
+                <div class="w-6 h-6 rounded-full bg-emerald-500/20 flex items-center justify-center shrink-0 mt-0.5">
+                  <svg class="w-3.5 h-3.5 text-emerald-400" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M9.813 15.904 9 18.75l-.813-2.846a4.5 4.5 0 0 0-3.09-3.09L2.25 12l2.846-.813a4.5 4.5 0 0 0 3.09-3.09L9 5.25l.813 2.846a4.5 4.5 0 0 0 3.09 3.09L15.75 12l-2.846.813a4.5 4.5 0 0 0-3.09 3.09ZM18.259 8.715 18 9.75l-.259-1.035a3.375 3.375 0 0 0-2.455-2.456L14.25 6l1.036-.259a3.375 3.375 0 0 0 2.455-2.456L18 2.25l.259 1.035a3.375 3.375 0 0 0 2.455 2.456L21.75 6l-1.036.259a3.375 3.375 0 0 0-2.455 2.456Z" />
+                  </svg>
+                </div>
+                <div
+                  class="rounded-2xl rounded-tl-sm px-4 py-2.5 text-sm"
+                  :class="[
+                    msg.role === 'system' ? 'bg-amber-500/10 text-amber-300' : 'bg-gray-800 text-gray-100',
+                    msg.text === '...' && msg.id.startsWith('thinking-') ? 'animate-pulse' : '',
+                    msg.role === 'assistant' ? 'prose-chat' : '',
+                  ]"
+                >
+                  <div v-if="msg.role === 'assistant'" v-html="renderMarkdown(msg.text)" />
+                  <template v-else>{{ msg.text }}</template>
+                </div>
+              </div>
+
+              <div v-else class="max-w-[80%]">
+                <div class="rounded-2xl rounded-tr-sm bg-emerald-600 px-4 py-2.5 text-sm text-white whitespace-pre-wrap">
+                  {{ msg.text }}
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Input -->
+          <div class="mt-3">
+            <div class="rounded-xl border border-gray-700 bg-gray-900 px-3 py-2 flex items-end gap-2">
+              <textarea
+                ref="agentTextarea"
+                v-model="agentInput"
+                placeholder="Ask about this project..."
+                rows="1"
+                class="flex-1 bg-transparent text-gray-100 placeholder-gray-500 resize-none outline-none text-sm leading-6 border-none max-h-36 overflow-y-auto"
+                style="background: transparent; color: #f3f4f6"
+                @keydown="handleAgentKeydown"
+              />
+              <button
+                class="p-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white transition-colors disabled:opacity-30 disabled:cursor-not-allowed shrink-0"
+                :disabled="!agentInput.trim()"
+                @click="handleAgentSend"
+              >
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" d="M4.5 10.5 12 3m0 0 7.5 7.5M12 3v18" />
+                </svg>
+              </button>
+            </div>
+          </div>
+        </div>
+      </ClientOnly>
     </template>
 
     <!-- Catalog detail overlay (slide-over) -->
@@ -830,3 +984,25 @@ onUnmounted(() => {
     </Teleport>
   </div>
 </template>
+
+<style scoped>
+.prose-chat :deep(p) { margin: 0.25em 0; }
+.prose-chat :deep(p:first-child) { margin-top: 0; }
+.prose-chat :deep(p:last-child) { margin-bottom: 0; }
+.prose-chat :deep(ul), .prose-chat :deep(ol) { margin: 0.4em 0; padding-left: 1.4em; }
+.prose-chat :deep(ul) { list-style-type: disc; }
+.prose-chat :deep(ol) { list-style-type: decimal; }
+.prose-chat :deep(li) { margin: 0.15em 0; }
+.prose-chat :deep(strong) { font-weight: 600; }
+.prose-chat :deep(em) { font-style: italic; }
+.prose-chat :deep(code) { background: rgba(255,255,255,0.1); padding: 0.15em 0.35em; border-radius: 0.25em; font-size: 0.875em; }
+.prose-chat :deep(pre) { background: rgba(0,0,0,0.3); padding: 0.75em 1em; border-radius: 0.5em; overflow-x: auto; margin: 0.5em 0; }
+.prose-chat :deep(pre code) { background: none; padding: 0; }
+.prose-chat :deep(blockquote) { border-left: 3px solid rgba(255,255,255,0.2); padding-left: 0.75em; margin: 0.4em 0; opacity: 0.85; }
+.prose-chat :deep(h1), .prose-chat :deep(h2), .prose-chat :deep(h3) { font-weight: 600; margin: 0.5em 0 0.25em; }
+.prose-chat :deep(h1) { font-size: 1.2em; }
+.prose-chat :deep(h2) { font-size: 1.1em; }
+.prose-chat :deep(h3) { font-size: 1.05em; }
+.prose-chat :deep(a) { color: #6ee7b7; text-decoration: underline; }
+.prose-chat :deep(hr) { border-color: rgba(255,255,255,0.1); margin: 0.5em 0; }
+</style>
