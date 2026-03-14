@@ -94,10 +94,10 @@ export const resolvers: ResolverMap<RequestCradle> = {
     async sendMessage(
       this: RequestCradle,
       _: unknown,
-      args: { input: { conversationId: string; text: string } },
+      args: { input: { conversationId: string; text: string; projectId?: string } },
       ctx: any,
     ) {
-      const { conversationId, text } = args.input
+      const { conversationId, text, projectId } = args.input
       const orchestrationUrl = process.env.ORCHESTRATION_URL || 'http://localhost:4010'
 
       // Save user message
@@ -121,7 +121,7 @@ export const resolvers: ResolverMap<RequestCradle> = {
         const startRes = await fetch(`${orchestrationUrl}/agents/chat/start`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ conversationId }),
+          body: JSON.stringify({ conversationId, projectId }),
         })
         const startData = (await startRes.json()) as { workflowId: string }
         workflowId = startData.workflowId

@@ -259,6 +259,7 @@ export const agentChatWorkflow: WorkflowDef = {
           type: 'SIMPLE',
           inputParameters: {
             conversationId: '${workflow.input.conversationId}',
+            localPath: '${workflow.input.localPath}',
             text: '${agent_wait_for_message_ref.output.text}',
             messages: '${agent_gather_context_ref.output.messages}',
           },

@@ -243,7 +243,7 @@ export function useAgent() {
     })
   }
 
-  async function sendMessage(message: string) {
+  async function sendMessage(message: string, projectId?: string) {
     if (!activeId.value) {
       activeId.value = await createConversation()
     }
@@ -297,7 +297,7 @@ export function useAgent() {
             workflowId
           } } }
         }`,
-        { input: { conversationId, text: message } },
+        { input: { conversationId, text: message, ...(projectId ? { projectId } : {}) } },
       )
 
       // Replace temp user message with the real persisted one
