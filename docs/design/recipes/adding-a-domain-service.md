@@ -21,7 +21,9 @@ Services use sequential ports starting at 4000:
 | 4001 | iam |
 | 4002 | system |
 | 4003 | agents |
+| 4004 | projects |
 | 4010 | orchestration |
+| 4020 | conductor-cdc |
 
 Pick the next available port for your service.
 
@@ -268,6 +270,55 @@ Key conventions:
 - Constructor accepts `{ db }` from DI cradle
 - Use named params (`:paramName`) in SQL
 - `db.query<T>()` returns camelCase-mapped rows
+
+### File Naming — Critical
+
+**Service filenames must NOT contain hyphens.** Moribashi's `defaultFormatName` derives the DI registration key from the filename by splitting on `.` and mapping the suffix (`svc` → `Service`), but it does **not** camelCase the base portion.
+
+| Filename | DI Key | Works? |
+|----------|--------|--------|
+| `memberships.svc.ts` | `membershipsService` | Yes |
+| `orgRelationships.svc.ts` | `orgRelationshipsService` | Yes |
+| `org-relationships.svc.ts` | `org-relationshipsService` | **No** — hyphen preserved |
+
+Use **camelCase** filenames for multi-word service files (e.g., `orgRelationships.svc.ts`). The containing directory name can use kebab-case (e.g., `org-relationships/`) since it is not part of the DI key.
+
+### Multiple Services per Subgraph
+
+A single subgraph can contain multiple domain services. The IAM subgraph has five:
+
+```
+services/iam/src/
+  identities/identities.svc.ts        → identitiesService
+  organizations/organizations.svc.ts  → organizationsService
+  roles/roles.svc.ts                  → rolesService
+  memberships/memberships.svc.ts      → membershipsService
+  org-relationships/orgRelationships.svc.ts → orgRelationshipsService
+```
+
+Each service owns one aggregate (entity + its join tables). The `RequestCradle` interface lists all services for the subgraph:
+
+```typescript
+export interface RequestCradle {
+  identitiesService: IdentitiesService
+  organizationsService: OrganizationsService
+  rolesService: RolesService
+  membershipsService: MembershipsService
+  orgRelationshipsService: OrgRelationshipsService
+}
+```
+
+### Join Table Operations
+
+For many-to-many relationships (e.g., membership ↔ role), use `ON CONFLICT DO NOTHING` for idempotent assignment:
+
+```sql
+INSERT INTO membership_role (membership_id, role_id)
+VALUES (:membershipId, :roleId)
+ON CONFLICT (membership_id, role_id) DO NOTHING
+```
+
+This is safer than check-then-insert (race conditions) and avoids errors on duplicate assignment.
 
 ---
 
