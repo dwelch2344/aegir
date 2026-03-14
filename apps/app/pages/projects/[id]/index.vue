@@ -10,7 +10,7 @@ function renderMarkdown(text: string): string {
 }
 
 const { fetchProject, syncProject, deleteProject, checkStatus, applyPattern, runDiagnostics, subscribeToActivity } = useProjects()
-const { catalog, fetchCatalog, getEntry } = useCatalog()
+const { catalog, catalogLoading, fetchCatalog } = useCatalog()
 const agent = useAgent()
 
 const project = ref<any>(null)
@@ -26,22 +26,32 @@ const deleting = ref(false)
 const activeTab = ref<'overview' | 'patterns' | 'actions' | 'agent'>('overview')
 
 // Apply pattern form
-const showApply = ref(false)
 const applying = ref(false)
+const applyingPatternId = ref<string | null>(null)
 const applyForm = reactive({
-  patternId: 'service.domain-subgraph',
   name: '',
   port: '',
   entity: '',
   fields: '',
 })
 
-// Catalog detail overlay
-const selectedPatternId = ref<string | null>(null)
-const selectedCatalogEntry = computed(() => {
-  if (!selectedPatternId.value) return null
-  return getEntry(selectedPatternId.value) ?? null
+// Unified pattern list: merge catalog with applied state
+const patternRows = computed(() => {
+  if (!project.value) return []
+  const applied = project.value.patterns || []
+  return catalog.value.map((entry: any) => {
+    const match = applied.find((p: any) => p.patternId === entry.id)
+    return {
+      ...entry,
+      applied: !!match,
+      appliedVersion: match?.version ?? null,
+      appliedAt: match?.appliedAt ?? null,
+    }
+  })
 })
+
+// Expanded detail row
+const expandedPatternId = ref<string | null>(null)
 
 // Diagnostics
 const diagRunning = ref(false)
@@ -158,14 +168,14 @@ async function handleCheckStatus() {
   }
 }
 
-async function handleApply() {
+async function handleApply(patternId: string) {
   applying.value = true
   error.value = ''
   success.value = ''
   try {
     const params: Record<string, unknown> = {}
 
-    if (applyForm.patternId === 'service.domain-subgraph') {
+    if (patternId === 'service.domain-subgraph') {
       if (!applyForm.name.trim()) {
         error.value = 'Service name is required'
         applying.value = false
@@ -177,9 +187,9 @@ async function handleApply() {
       if (applyForm.fields) params.entity_fields = applyForm.fields.trim()
     }
 
-    await applyPattern(projectId, applyForm.patternId, params)
-    success.value = `Applying "${applyForm.patternId}" — changes will be committed to a new branch with a PR...`
-    showApply.value = false
+    await applyPattern(projectId, patternId, params)
+    success.value = `Applying "${patternId}" — changes will be committed to a new branch with a PR...`
+    applyingPatternId.value = null
     applyForm.name = ''
     applyForm.port = ''
     applyForm.entity = ''
@@ -345,22 +355,18 @@ onUnmounted(() => {
         <!-- Applied Patterns (summary) -->
         <div class="mb-8">
           <h2 class="text-sm font-medium text-gray-400 mb-3">Applied Patterns ({{ project.patterns.length }})</h2>
-          <div v-if="project.patterns.length === 0" class="text-sm text-gray-600">No patterns applied.</div>
-          <div v-else class="space-y-2">
-            <button
+          <div v-if="project.patterns.length === 0" class="text-sm text-gray-600">
+            No patterns applied.
+            <button class="text-emerald-400 hover:text-emerald-300 ml-1" @click="activeTab = 'patterns'">Browse catalog</button>
+          </div>
+          <div v-else class="flex flex-wrap gap-2">
+            <span
               v-for="pat in project.patterns"
               :key="pat.id"
-              class="w-full text-left flex items-center justify-between p-3 rounded-lg bg-gray-800 border border-gray-700 hover:border-gray-600 transition-colors"
-              @click="selectedPatternId = pat.patternId"
+              class="text-xs px-2 py-1 rounded bg-emerald-900/30 text-emerald-400 border border-emerald-800/50"
             >
-              <div>
-                <p class="text-sm text-gray-200">{{ pat.patternId }}</p>
-                <p class="text-xs text-gray-500">v{{ pat.version }} &middot; Applied: {{ formatDate(pat.appliedAt) }}</p>
-              </div>
-              <svg class="w-4 h-4 text-gray-600" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24">
-                <path stroke-linecap="round" stroke-linejoin="round" d="m8.25 4.5 7.5 7.5-7.5 7.5" />
-              </svg>
-            </button>
+              {{ pat.patternId }} <span class="text-emerald-600">v{{ pat.version }}</span>
+            </span>
           </div>
         </div>
 
@@ -474,223 +480,169 @@ onUnmounted(() => {
 
       <!-- ==================== PATTERNS TAB ==================== -->
       <div v-if="activeTab === 'patterns'">
-        <!-- Apply pattern button + form -->
-        <div class="mb-6">
-          <button
-            class="px-4 py-2 rounded-lg bg-emerald-600 text-sm font-medium text-white hover:bg-emerald-500 transition-colors"
-            @click="showApply = !showApply"
-          >
-            {{ showApply ? 'Cancel' : 'Apply pattern' }}
-          </button>
+        <div class="rounded-lg border border-gray-700 overflow-hidden">
+          <table class="w-full text-sm">
+            <thead>
+              <tr class="bg-gray-800/80">
+                <th class="text-left px-4 py-2.5 text-xs font-medium text-gray-500 uppercase">Pattern</th>
+                <th class="text-left px-4 py-2.5 text-xs font-medium text-gray-500 uppercase w-24">Version</th>
+                <th class="text-left px-4 py-2.5 text-xs font-medium text-gray-500 uppercase w-32">Status</th>
+                <th class="text-right px-4 py-2.5 text-xs font-medium text-gray-500 uppercase w-28"></th>
+              </tr>
+            </thead>
+            <tbody class="divide-y divide-gray-800">
+              <template v-for="row in patternRows" :key="row.id">
+                <!-- Main row -->
+                <tr
+                  class="hover:bg-gray-800/50 transition-colors cursor-pointer"
+                  @click="expandedPatternId = expandedPatternId === row.id ? null : row.id"
+                >
+                  <td class="px-4 py-3">
+                    <p class="text-gray-200">{{ row.name }}</p>
+                    <p class="text-xs text-gray-500">{{ row.id }}</p>
+                  </td>
+                  <td class="px-4 py-3 text-xs text-gray-400">v{{ row.version }}</td>
+                  <td class="px-4 py-3">
+                    <span v-if="row.applied" class="inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded bg-emerald-900/30 text-emerald-400 border border-emerald-800/50">
+                      Applied
+                      <span class="text-emerald-600">{{ formatDate(row.appliedAt) }}</span>
+                    </span>
+                    <span v-else class="text-xs text-gray-600">Not applied</span>
+                  </td>
+                  <td class="px-4 py-3 text-right">
+                    <button
+                      v-if="!row.applied"
+                      class="text-xs px-2.5 py-1 rounded bg-emerald-600 text-white hover:bg-emerald-500 transition-colors"
+                      @click.stop="applyingPatternId = applyingPatternId === row.id ? null : row.id; expandedPatternId = null"
+                    >
+                      Apply
+                    </button>
+                    <svg
+                      v-else
+                      class="w-4 h-4 text-gray-600 inline-block transition-transform"
+                      :class="{ 'rotate-180': expandedPatternId === row.id }"
+                      fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24"
+                    >
+                      <path stroke-linecap="round" stroke-linejoin="round" d="m19.5 8.25-7.5 7.5-7.5-7.5" />
+                    </svg>
+                  </td>
+                </tr>
+
+                <!-- Expanded detail row -->
+                <tr v-if="expandedPatternId === row.id">
+                  <td colspan="4" class="px-4 py-4 bg-gray-800/40">
+                    <p class="text-sm text-gray-300 mb-3 whitespace-pre-line">{{ row.description }}</p>
+                    <div class="flex flex-wrap gap-4">
+                      <div v-if="row.provides.length > 0">
+                        <p class="text-xs font-medium text-gray-500 uppercase mb-1.5">Provides</p>
+                        <div class="flex flex-wrap gap-1.5">
+                          <span
+                            v-for="cap in row.provides"
+                            :key="cap"
+                            class="text-xs px-2 py-0.5 rounded-full bg-emerald-900/30 text-emerald-400 border border-emerald-800/50"
+                          >
+                            {{ cap }}
+                          </span>
+                        </div>
+                      </div>
+                      <div v-if="row.preconditions.length > 0">
+                        <p class="text-xs font-medium text-gray-500 uppercase mb-1.5">Requires</p>
+                        <div class="flex flex-wrap gap-1.5">
+                          <span
+                            v-for="pre in row.preconditions"
+                            :key="pre"
+                            class="text-xs px-2 py-0.5 rounded-full bg-yellow-900/30 text-yellow-400 border border-yellow-800/50"
+                          >
+                            {{ pre }}
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+                  </td>
+                </tr>
+
+                <!-- Inline apply form row -->
+                <tr v-if="applyingPatternId === row.id">
+                  <td colspan="4" class="px-4 py-4 bg-gray-800/60 border-t border-gray-700">
+                    <form @submit.prevent="handleApply(row.id)" class="space-y-3">
+                      <p class="text-xs text-gray-500">Apply <span class="text-gray-300">{{ row.name }}</span> — this will generate code, commit, and push to a new branch.</p>
+
+                      <!-- service.domain-subgraph params -->
+                      <template v-if="row.id === 'service.domain-subgraph'">
+                        <div class="grid grid-cols-2 gap-3">
+                          <div>
+                            <label class="block text-xs text-gray-400 mb-1">Service name</label>
+                            <input
+                              v-model="applyForm.name"
+                              type="text"
+                              placeholder="billing"
+                              class="w-full rounded bg-gray-900 border border-gray-700 px-3 py-1.5 text-sm text-gray-100 focus:outline-none focus:border-emerald-500"
+                            />
+                          </div>
+                          <div>
+                            <label class="block text-xs text-gray-400 mb-1">Port</label>
+                            <input
+                              v-model="applyForm.port"
+                              type="text"
+                              placeholder="4005"
+                              class="w-full rounded bg-gray-900 border border-gray-700 px-3 py-1.5 text-sm text-gray-100 focus:outline-none focus:border-emerald-500"
+                            />
+                          </div>
+                        </div>
+                        <div class="grid grid-cols-2 gap-3">
+                          <div>
+                            <label class="block text-xs text-gray-400 mb-1">Entity name <span class="text-gray-600">optional</span></label>
+                            <input
+                              v-model="applyForm.entity"
+                              type="text"
+                              placeholder="Invoice"
+                              class="w-full rounded bg-gray-900 border border-gray-700 px-3 py-1.5 text-sm text-gray-100 focus:outline-none focus:border-emerald-500"
+                            />
+                          </div>
+                          <div>
+                            <label class="block text-xs text-gray-400 mb-1">Fields <span class="text-gray-600">optional</span></label>
+                            <input
+                              v-model="applyForm.fields"
+                              type="text"
+                              placeholder="amount:number,status:string"
+                              class="w-full rounded bg-gray-900 border border-gray-700 px-3 py-1.5 text-sm text-gray-100 focus:outline-none focus:border-emerald-500"
+                            />
+                          </div>
+                        </div>
+                      </template>
+
+                      <!-- Generic parameters hint for other patterns -->
+                      <div v-else-if="Object.keys(row.parameters).length > 0" class="text-xs text-gray-500">
+                        <span class="text-gray-400">Parameters:</span>
+                        {{ Object.keys(row.parameters).join(', ') }}
+                      </div>
+
+                      <div class="flex items-center gap-3">
+                        <button
+                          type="submit"
+                          :disabled="applying || (row.id === 'service.domain-subgraph' && !applyForm.name.trim())"
+                          class="px-4 py-1.5 rounded bg-emerald-600 text-sm font-medium text-white hover:bg-emerald-500 disabled:opacity-50 transition-colors"
+                        >
+                          {{ applying ? 'Applying...' : 'Apply & push' }}
+                        </button>
+                        <button
+                          type="button"
+                          class="text-xs text-gray-500 hover:text-gray-300 transition-colors"
+                          @click="applyingPatternId = null"
+                        >
+                          Cancel
+                        </button>
+                      </div>
+                    </form>
+                  </td>
+                </tr>
+              </template>
+            </tbody>
+          </table>
         </div>
 
-        <form
-          v-if="showApply"
-          class="mb-6 p-4 rounded-lg bg-gray-800 border border-gray-700 space-y-3"
-          @submit.prevent="handleApply"
-        >
-          <h3 class="text-sm font-medium text-gray-200">Apply a catalog pattern</h3>
-          <p class="text-xs text-gray-500">This will run the pattern generator, commit changes, and push to the repository.</p>
-          <div>
-            <label class="block text-sm text-gray-400 mb-1">Pattern</label>
-            <select
-              v-model="applyForm.patternId"
-              class="w-full rounded bg-gray-900 border border-gray-700 px-3 py-2 text-sm text-gray-100 focus:outline-none focus:border-emerald-500"
-            >
-              <option value="service.domain-subgraph">service.domain-subgraph — Add a new federated service</option>
-              <option value="harness.devcontainer">harness.devcontainer — Generate drydock (devcontainer)</option>
-            </select>
-          </div>
-          <!-- service.domain-subgraph fields -->
-          <template v-if="applyForm.patternId === 'service.domain-subgraph'">
-            <div class="grid grid-cols-2 gap-3">
-              <div>
-                <label class="block text-sm text-gray-400 mb-1">Service name</label>
-                <input
-                  v-model="applyForm.name"
-                  type="text"
-                  placeholder="billing"
-                  class="w-full rounded bg-gray-900 border border-gray-700 px-3 py-2 text-sm text-gray-100 focus:outline-none focus:border-emerald-500"
-                />
-              </div>
-              <div>
-                <label class="block text-sm text-gray-400 mb-1">Port</label>
-                <input
-                  v-model="applyForm.port"
-                  type="text"
-                  placeholder="4005"
-                  class="w-full rounded bg-gray-900 border border-gray-700 px-3 py-2 text-sm text-gray-100 focus:outline-none focus:border-emerald-500"
-                />
-              </div>
-            </div>
-            <div class="grid grid-cols-2 gap-3">
-              <div>
-                <label class="block text-sm text-gray-400 mb-1">Entity name (optional)</label>
-                <input
-                  v-model="applyForm.entity"
-                  type="text"
-                  placeholder="Invoice"
-                  class="w-full rounded bg-gray-900 border border-gray-700 px-3 py-2 text-sm text-gray-100 focus:outline-none focus:border-emerald-500"
-                />
-              </div>
-              <div>
-                <label class="block text-sm text-gray-400 mb-1">Fields (optional)</label>
-                <input
-                  v-model="applyForm.fields"
-                  type="text"
-                  placeholder="amount:number,status:string"
-                  class="w-full rounded bg-gray-900 border border-gray-700 px-3 py-2 text-sm text-gray-100 focus:outline-none focus:border-emerald-500"
-                />
-              </div>
-            </div>
-          </template>
-          <!-- harness.devcontainer description -->
-          <div v-if="applyForm.patternId === 'harness.devcontainer'" class="p-3 rounded bg-gray-900 border border-gray-700">
-            <p class="text-sm text-gray-300">Generates a complete <code>.devcontainer/</code> drydock based on the ship's manifest:</p>
-            <ul class="text-xs text-gray-400 mt-2 space-y-1 ml-4 list-disc">
-              <li>Docker Compose with all required infrastructure services</li>
-              <li>Traefik single-port ingress with path-based routing</li>
-              <li>Postgres init scripts with per-service roles</li>
-              <li>Conductor, Grafana, Redpanda configs (if applicable)</li>
-              <li>Bootstrap and teardown scripts</li>
-            </ul>
-          </div>
-          <button
-            type="submit"
-            :disabled="applying || (applyForm.patternId === 'service.domain-subgraph' && !applyForm.name.trim())"
-            class="px-4 py-2 rounded bg-emerald-600 text-sm font-medium text-white hover:bg-emerald-500 disabled:opacity-50 transition-colors"
-          >
-            {{ applying ? 'Applying...' : 'Apply & push' }}
-          </button>
-        </form>
-
-        <!-- Applied patterns with catalog detail -->
-        <div class="mb-6">
-          <h2 class="text-sm font-medium text-gray-400 mb-3">Applied Patterns ({{ project.patterns.length }})</h2>
-          <div v-if="project.patterns.length === 0" class="text-sm text-gray-600">No patterns applied yet.</div>
-          <div v-else class="space-y-2">
-            <button
-              v-for="pat in project.patterns"
-              :key="pat.id"
-              class="w-full text-left flex items-center justify-between p-3 rounded-lg bg-gray-800 border border-gray-700 hover:border-gray-600 transition-colors"
-              @click="selectedPatternId = selectedPatternId === pat.patternId ? null : pat.patternId"
-            >
-              <div>
-                <p class="text-sm text-gray-200">{{ pat.patternId }}</p>
-                <p class="text-xs text-gray-500">v{{ pat.version }} &middot; Applied: {{ formatDate(pat.appliedAt) }}</p>
-              </div>
-              <svg
-                class="w-4 h-4 text-gray-600 transition-transform"
-                :class="{ 'rotate-90': selectedPatternId === pat.patternId }"
-                fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24"
-              >
-                <path stroke-linecap="round" stroke-linejoin="round" d="m8.25 4.5 7.5 7.5-7.5 7.5" />
-              </svg>
-            </button>
-
-            <!-- Inline catalog detail for selected pattern -->
-            <div
-              v-if="selectedPatternId && selectedCatalogEntry"
-              class="p-4 rounded-lg bg-gray-850 border border-gray-600 space-y-3"
-            >
-              <div class="flex items-center justify-between">
-                <h3 class="text-sm font-medium text-gray-100">{{ selectedCatalogEntry.name }}</h3>
-                <span class="text-xs text-gray-600">v{{ selectedCatalogEntry.version }}</span>
-              </div>
-              <p class="text-sm text-gray-400 whitespace-pre-line">{{ selectedCatalogEntry.description }}</p>
-
-              <div v-if="selectedCatalogEntry.provides.length > 0">
-                <p class="text-xs font-medium text-gray-500 uppercase mb-1.5">Capabilities</p>
-                <div class="flex flex-wrap gap-1.5">
-                  <span
-                    v-for="cap in selectedCatalogEntry.provides"
-                    :key="cap"
-                    class="text-xs px-2 py-0.5 rounded-full bg-emerald-900/30 text-emerald-400 border border-emerald-800/50"
-                  >
-                    {{ cap }}
-                  </span>
-                </div>
-              </div>
-
-              <div v-if="selectedCatalogEntry.preconditions.length > 0">
-                <p class="text-xs font-medium text-gray-500 uppercase mb-1.5">Preconditions</p>
-                <div class="flex flex-wrap gap-1.5">
-                  <span
-                    v-for="pre in selectedCatalogEntry.preconditions"
-                    :key="pre"
-                    class="text-xs px-2 py-0.5 rounded-full bg-yellow-900/30 text-yellow-400 border border-yellow-800/50"
-                  >
-                    {{ pre }}
-                  </span>
-                </div>
-              </div>
-
-              <div v-if="Object.keys(selectedCatalogEntry.parameters).length > 0">
-                <p class="text-xs font-medium text-gray-500 uppercase mb-1.5">Parameters</p>
-                <div class="space-y-1.5">
-                  <div
-                    v-for="(param, key) in selectedCatalogEntry.parameters"
-                    :key="key"
-                    class="flex items-start gap-2 text-xs"
-                  >
-                    <code class="text-emerald-400 font-mono shrink-0">{{ key }}</code>
-                    <span class="text-gray-500">{{ param.type || 'string' }}</span>
-                    <span v-if="param.default !== undefined" class="text-gray-600">= {{ param.default }}</span>
-                  </div>
-                </div>
-              </div>
-
-              <button
-                class="text-xs text-gray-500 hover:text-gray-300 transition-colors"
-                @click="selectedPatternId = null"
-              >
-                Close
-              </button>
-            </div>
-
-            <!-- Pattern not in catalog -->
-            <div
-              v-if="selectedPatternId && !selectedCatalogEntry"
-              class="p-3 rounded-lg bg-gray-800 border border-gray-700 text-sm text-gray-500"
-            >
-              Pattern "{{ selectedPatternId }}" is not in the catalog.
-              <button class="text-gray-400 hover:text-gray-200 ml-2" @click="selectedPatternId = null">Close</button>
-            </div>
-          </div>
-        </div>
-
-        <!-- Catalog browser -->
-        <div>
-          <h2 class="text-sm font-medium text-gray-400 mb-3">Available in Catalog</h2>
-          <div class="space-y-2">
-            <div
-              v-for="entry in catalog"
-              :key="entry.id"
-              class="flex items-center justify-between p-3 rounded-lg border transition-colors"
-              :class="project.patterns.some((p: any) => p.patternId === entry.id)
-                ? 'bg-emerald-900/10 border-emerald-800/40'
-                : 'bg-gray-800 border-gray-700'"
-            >
-              <div class="min-w-0 flex-1">
-                <div class="flex items-center gap-2">
-                  <p class="text-sm text-gray-200">{{ entry.name }}</p>
-                  <span
-                    v-if="project.patterns.some((p: any) => p.patternId === entry.id)"
-                    class="text-xs px-1.5 py-0.5 rounded bg-emerald-900/40 text-emerald-400"
-                  >
-                    applied
-                  </span>
-                </div>
-                <p class="text-xs text-gray-500 truncate">{{ entry.id }} &middot; v{{ entry.version }}</p>
-              </div>
-              <NuxtLink
-                to="/catalog"
-                class="text-xs text-gray-500 hover:text-gray-300 transition-colors shrink-0 ml-3"
-              >
-                View details
-              </NuxtLink>
-            </div>
-          </div>
+        <div v-if="patternRows.length === 0 && !catalogLoading" class="text-sm text-gray-500 mt-4">
+          No catalog patterns loaded. <button class="text-emerald-400 hover:text-emerald-300" @click="fetchCatalog">Retry</button>
         </div>
       </div>
 
@@ -918,74 +870,6 @@ onUnmounted(() => {
       </ClientOnly>
     </template>
 
-    <!-- Catalog detail overlay (slide-over) -->
-    <Teleport to="body">
-      <div
-        v-if="selectedPatternId && selectedCatalogEntry && activeTab === 'overview'"
-        class="fixed inset-0 z-50 flex justify-end"
-      >
-        <div class="absolute inset-0 bg-black/50" @click="selectedPatternId = null" />
-        <div class="relative w-full max-w-lg bg-gray-900 border-l border-gray-700 p-6 overflow-y-auto">
-          <button
-            class="absolute top-4 right-4 text-gray-500 hover:text-gray-300"
-            @click="selectedPatternId = null"
-          >
-            <svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24">
-              <path stroke-linecap="round" stroke-linejoin="round" d="M6 18 18 6M6 6l12 12" />
-            </svg>
-          </button>
-
-          <h2 class="text-lg font-semibold text-gray-100 mb-1">{{ selectedCatalogEntry.name }}</h2>
-          <p class="text-xs text-gray-500 mb-4">{{ selectedCatalogEntry.id }} v{{ selectedCatalogEntry.version }}</p>
-          <p class="text-sm text-gray-300 whitespace-pre-line mb-5">{{ selectedCatalogEntry.description }}</p>
-
-          <div v-if="selectedCatalogEntry.provides.length > 0" class="mb-5">
-            <h3 class="text-xs font-medium text-gray-500 uppercase mb-2">Capabilities Provided</h3>
-            <div class="flex flex-wrap gap-1.5">
-              <span
-                v-for="cap in selectedCatalogEntry.provides"
-                :key="cap"
-                class="text-xs px-2 py-0.5 rounded-full bg-emerald-900/30 text-emerald-400 border border-emerald-800/50"
-              >
-                {{ cap }}
-              </span>
-            </div>
-          </div>
-
-          <div v-if="selectedCatalogEntry.preconditions.length > 0" class="mb-5">
-            <h3 class="text-xs font-medium text-gray-500 uppercase mb-2">Preconditions</h3>
-            <div class="flex flex-wrap gap-1.5">
-              <span
-                v-for="pre in selectedCatalogEntry.preconditions"
-                :key="pre"
-                class="text-xs px-2 py-0.5 rounded-full bg-yellow-900/30 text-yellow-400 border border-yellow-800/50"
-              >
-                {{ pre }}
-              </span>
-            </div>
-          </div>
-
-          <div v-if="Object.keys(selectedCatalogEntry.parameters).length > 0" class="mb-5">
-            <h3 class="text-xs font-medium text-gray-500 uppercase mb-2">Parameters</h3>
-            <div class="space-y-2">
-              <div
-                v-for="(param, key) in selectedCatalogEntry.parameters"
-                :key="key"
-                class="text-xs"
-              >
-                <div class="flex items-center gap-2">
-                  <code class="text-emerald-400 font-mono">{{ key }}</code>
-                  <span class="text-gray-500">{{ param.type || 'string' }}</span>
-                  <span v-if="param.required" class="text-red-400">required</span>
-                  <span v-if="param.default !== undefined" class="text-gray-600">= {{ param.default }}</span>
-                </div>
-                <p v-if="param.description" class="text-gray-400 mt-0.5 ml-0">{{ param.description }}</p>
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
-    </Teleport>
   </div>
 </template>
 
