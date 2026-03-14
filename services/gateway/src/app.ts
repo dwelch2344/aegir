@@ -14,6 +14,7 @@ export function createApp() {
         { name: 'iam', url: config.services.iam },
         { name: 'system', url: config.services.system },
         { name: 'agents', url: config.services.agents },
+        { name: 'projects', url: config.services.projects },
       ],
       pollingInterval: 5000,
       retryServicesCount: 10,

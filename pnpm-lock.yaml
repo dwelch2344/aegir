@@ -274,6 +274,52 @@ importers:
         specifier: ^3.0.0
         version: 3.2.4(@types/node@22.19.15)(jiti@2.6.1)(terser@5.46.0)(tsx@4.21.0)(yaml@2.8.2)
 
+  services/projects:
+    dependencies:
+      '@aegir/common':
+        specifier: workspace:*
+        version: link:../../packages/common
+      '@mercuriusjs/federation':
+        specifier: '*'
+        version: 5.1.0
+      '@moribashi/common':
+        specifier: ^0.1.11
+        version: 0.1.11
+      '@moribashi/core':
+        specifier: ^0.1.11
+        version: 0.1.11
+      '@moribashi/graphql':
+        specifier: ^0.1.11
+        version: 0.1.11(fastify@5.8.2)
+      '@moribashi/pg':
+        specifier: ^0.1.11
+        version: 0.1.11(fastify@5.8.2)
+      '@moribashi/web':
+        specifier: ^0.1.11
+        version: 0.1.11
+      fastify:
+        specifier: ^5.0.0
+        version: 5.8.2
+      graphql:
+        specifier: ^16.0.0
+        version: 16.13.1
+      mercurius:
+        specifier: ^16.0.0
+        version: 16.8.0(graphql@16.13.1)
+    devDependencies:
+      tsup:
+        specifier: ^8.0.0
+        version: 8.5.1(jiti@2.6.1)(postcss@8.5.8)(tsx@4.21.0)(typescript@5.9.3)(yaml@2.8.2)
+      tsx:
+        specifier: ^4.0.0
+        version: 4.21.0
+      typescript:
+        specifier: ^5.7.0
+        version: 5.9.3
+      vitest:
+        specifier: ^3.0.0
+        version: 3.2.4(@types/node@22.19.15)(jiti@2.6.1)(terser@5.46.0)(tsx@4.21.0)(yaml@2.8.2)
+
   services/system:
     dependencies:
       '@aegir/common':

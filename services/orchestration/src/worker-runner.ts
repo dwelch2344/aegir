@@ -11,6 +11,9 @@ import { handleShFinalizeContract } from './workers/sh-finalize-contract.js'
 import { handleShHfCountersignAndTraining } from './workers/sh-hf-countersign-and-training.js'
 import { handleShRequestContract } from './workers/sh-request-contract.js'
 import { handleShValidateAgentInfo } from './workers/sh-validate-agent-info.js'
+import { handleProjectClone } from './workers/project-clone.js'
+import { handleProjectParseManifest } from './workers/project-parse-manifest.js'
+import { handleProjectStoreMetadata } from './workers/project-store-metadata.js'
 import { handleValidateIdentity } from './workers/validate-identity.js'
 
 type TaskHandler = (task: any) => TaskResult | Promise<TaskResult>
@@ -31,6 +34,9 @@ const handlers: Record<string, TaskHandler> = {
   agent_gather_context: handleAgentGatherContext,
   agent_invoke_claude: handleAgentInvokeClaude,
   agent_deliver_response: handleAgentDeliverResponse,
+  project_clone: handleProjectClone,
+  project_parse_manifest: handleProjectParseManifest,
+  project_store_metadata: handleProjectStoreMetadata,
 }
 
 const WORKER_ID = `orchestration-${process.pid}`

@@ -5,6 +5,8 @@ import {
   agentChatTaskDefs,
   agentChatWorkflow,
   onboardingWorkflow,
+  projectSyncTaskDefs,
+  projectSyncWorkflow,
   selectHealthAcaWorkflow,
   selectHealthTaskDefs,
   taskDefs,
@@ -70,6 +72,43 @@ export async function buildApp() {
     return { ok: true }
   })
 
+  // Project sync — clone repo, parse manifest, store metadata
+  fastify.post<{ Body: { projectId: string; repoUrl?: string; branch?: string } }>(
+    '/projects/sync',
+    async (req) => {
+      const { projectId, repoUrl, branch } = req.body
+
+      // If repoUrl not provided, fetch it from the projects service
+      let url = repoUrl
+      let br = branch
+      if (!url) {
+        const gqlUrl = process.env.PROJECTS_GRAPHQL_URL || 'http://localhost:4004/graphql'
+        const res = await fetch(gqlUrl, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            query: `query($input: ProjectsProjectSearchInput!) {
+              projects { projects { search(input: $input) { results { repoUrl branch } } } }
+            }`,
+            variables: { input: { idIn: [projectId] } },
+          }),
+        })
+        const json = (await res.json()) as any
+        const project = json.data?.projects?.projects?.search?.results?.[0]
+        if (!project) throw new Error(`Project ${projectId} not found`)
+        url = project.repoUrl
+        br = project.branch
+      }
+
+      const workflowId = await startWorkflow('project_sync', {
+        projectId,
+        repoUrl: url,
+        branch: br ?? 'main',
+      })
+      return { workflowId }
+    },
+  )
+
   // Agent chat — start a persistent conversation workflow
   fastify.post<{ Body: { conversationId: string } }>('/agents/chat/start', async (req) => {
     const { conversationId } = req.body
@@ -120,7 +159,7 @@ export async function buildApp() {
 async function registerWithRetry(maxAttempts = 20, delayMs = 3000) {
   for (let attempt = 1; attempt <= maxAttempts; attempt++) {
     try {
-      const allTaskDefs = [...taskDefs, ...selectHealthTaskDefs, ...agentChatTaskDefs]
+      const allTaskDefs = [...taskDefs, ...selectHealthTaskDefs, ...agentChatTaskDefs, ...projectSyncTaskDefs]
       await registerTaskDefs(allTaskDefs)
       console.log(`[orchestration] registered ${allTaskDefs.length} task definitions`)
 
@@ -132,6 +171,9 @@ async function registerWithRetry(maxAttempts = 20, delayMs = 3000) {
 
       await registerWorkflow(agentChatWorkflow)
       console.log(`[orchestration] registered workflow "${agentChatWorkflow.name}"`)
+
+      await registerWorkflow(projectSyncWorkflow)
+      console.log(`[orchestration] registered workflow "${projectSyncWorkflow.name}"`)
       return
     } catch (err: any) {
       console.warn(`[orchestration] attempt ${attempt}/${maxAttempts} - conductor not ready: ${err.message}`)

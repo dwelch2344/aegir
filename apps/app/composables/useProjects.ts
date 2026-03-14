@@ -1,0 +1,159 @@
+/** Composable for managing Shipyard projects. */
+
+interface ProjectService {
+  id: string
+  name: string
+  type: string
+  port: number
+}
+
+interface ProjectPattern {
+  id: string
+  patternId: string
+  version: string
+  appliedAt: string | null
+}
+
+interface ProjectStatusReport {
+  id: string
+  issues: string[]
+  servicesOk: number
+  servicesMissing: number
+  outdatedPatterns: number
+  checkedAt: string
+}
+
+interface Project {
+  id: string
+  organizationId: number
+  name: string
+  repoUrl: string
+  branch: string
+  localPath: string | null
+  status: string
+  lastSyncedAt: string | null
+  manifestRaw: string | null
+  createdAt: string
+  updatedAt: string
+  services: ProjectService[]
+  patterns: ProjectPattern[]
+  statusReport: ProjectStatusReport | null
+}
+
+const projects = ref<Project[]>([])
+const loading = ref(false)
+
+async function gql<T>(gatewayUrl: string, query: string, variables?: Record<string, unknown>): Promise<T> {
+  const response = await fetch(gatewayUrl, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ query, variables }),
+  })
+  const json = await response.json()
+  if (json.errors?.length) throw new Error(json.errors[0].message)
+  return json.data as T
+}
+
+export function useProjects() {
+  const config = useRuntimeConfig()
+  const gatewayUrl = import.meta.server ? (config.gatewayUrl as string) : (config.public.gatewayUrl as string)
+
+  async function fetchProjects(organizationId: number) {
+    loading.value = true
+    try {
+      const data = await gql<any>(gatewayUrl, SEARCH_QUERY, {
+        input: { organizationId },
+      })
+      projects.value = data.projects.projects.search.results
+    } catch (err) {
+      console.error('Failed to fetch projects:', err)
+    } finally {
+      loading.value = false
+    }
+  }
+
+  async function fetchProject(id: string): Promise<Project | null> {
+    try {
+      const data = await gql<any>(gatewayUrl, SEARCH_QUERY, {
+        input: { idIn: [id] },
+      })
+      const project = data.projects.projects.search.results[0] ?? null
+      // Update local cache
+      if (project) {
+        const idx = projects.value.findIndex((p) => p.id === id)
+        if (idx >= 0) projects.value[idx] = project
+      }
+      return project
+    } catch (err) {
+      console.error('Failed to fetch project:', err)
+      return null
+    }
+  }
+
+  async function addProject(input: { organizationId: number; name: string; repoUrl: string; branch?: string }) {
+    const data = await gql<any>(gatewayUrl, CREATE_MUTATION, { input })
+    const project = data.projects.projects.create
+    projects.value.unshift({ ...project, services: [], patterns: [], statusReport: null })
+
+    // Trigger sync immediately
+    await syncProject(project.id)
+
+    return project
+  }
+
+  async function syncProject(id: string) {
+    const data = await gql<any>(gatewayUrl, SYNC_MUTATION, { id })
+    return data.projects.projects.sync
+  }
+
+  async function deleteProject(id: string) {
+    await gql<any>(gatewayUrl, DELETE_MUTATION, { id })
+    projects.value = projects.value.filter((p) => p.id !== id)
+  }
+
+  return {
+    projects,
+    loading,
+    fetchProjects,
+    fetchProject,
+    addProject,
+    syncProject,
+    deleteProject,
+  }
+}
+
+const SEARCH_QUERY = `
+  query($input: ProjectsProjectSearchInput!) {
+    projects {
+      projects {
+        search(input: $input) {
+          results {
+            id organizationId name repoUrl branch localPath
+            status lastSyncedAt createdAt updatedAt
+            services { id name type port }
+            patterns { id patternId version appliedAt }
+            statusReport { id issues servicesOk servicesMissing outdatedPatterns checkedAt }
+          }
+        }
+      }
+    }
+  }
+`
+
+const CREATE_MUTATION = `
+  mutation($input: ProjectsProjectCreateInput!) {
+    projects { projects { create(input: $input) { id name repoUrl branch status createdAt } } }
+  }
+`
+
+const SYNC_MUTATION = `
+  mutation($id: ID!) {
+    projects { projects { sync(id: $id) { projectId workflowId } } }
+  }
+`
+
+const DELETE_MUTATION = `
+  mutation($id: ID!) {
+    projects { projects { delete(id: $id) } }
+  }
+`

@@ -42,6 +42,12 @@ export const config = {
     graphqlUrl: getEnv('AGENTS_GRAPHQL_URL', 'http://localhost:4003/graphql')!,
   },
 
+  projects: {
+    graphqlUrl: getEnv('PROJECTS_GRAPHQL_URL', 'http://localhost:4004/graphql')!,
+    workspaceDir: getEnv('PROJECTS_WORKSPACE_DIR', '/tmp/shipyard-projects')!,
+    catalogDir: getEnv('SHIPYARD_CATALOG_DIR', '/workspace/catalog')!,
+  },
+
   selectHealth: {
     carrierContact: getEnv('SH_CARRIER_CONTACT_EMAIL', 'amy.koncar@selecthealth.org')!,
     trainingContact: getEnv('SH_TRAINING_CONTACT_EMAIL', 'andrew.freeze@selecthealth.org')!,

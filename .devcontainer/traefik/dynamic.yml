@@ -49,6 +49,12 @@ http:
       service: system
       middlewares: [strip-api-system]
 
+    api-projects:
+      rule: "PathPrefix(`/api/projects`)"
+      entryPoints: [web]
+      service: projects
+      middlewares: [strip-api-projects]
+
     api-gateway:
       rule: "PathPrefix(`/api/graphql`) || PathPrefix(`/api/graphiql`)"
       entryPoints: [web]
@@ -78,6 +84,10 @@ http:
       stripPrefix:
         prefixes: ["/api/system"]
 
+    strip-api-projects:
+      stripPrefix:
+        prefixes: ["/api/projects"]
+
   services:
     app:
       loadBalancer:
@@ -98,6 +108,11 @@ http:
       loadBalancer:
         servers:
           - url: "http://aegir-dev:4002"
+
+    projects:
+      loadBalancer:
+        servers:
+          - url: "http://aegir-dev:4004"
 
     mailhog:
       loadBalancer:

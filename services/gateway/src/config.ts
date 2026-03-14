@@ -7,5 +7,6 @@ export const config = {
     iam: getEnv('IAM_URL', 'http://localhost:4001/graphql')!,
     system: getEnv('SYSTEM_URL', 'http://localhost:4002/graphql')!,
     agents: getEnv('AGENTS_URL', 'http://localhost:4003/graphql')!,
+    projects: getEnv('PROJECTS_URL', 'http://localhost:4004/graphql')!,
   },
 }

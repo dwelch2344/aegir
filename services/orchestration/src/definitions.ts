@@ -276,6 +276,92 @@ export const agentChatWorkflow: WorkflowDef = {
   ],
 }
 
+// --- Project sync workflow ---
+
+const projectsOwner = 'projects@aegir.local'
+
+export const projectSyncTaskDefs: TaskDef[] = [
+  {
+    name: 'project_clone',
+    description: 'Clones or pulls the project repository to a local workspace',
+    retryCount: 2,
+    retryLogic: 'FIXED',
+    retryDelaySeconds: 5,
+    timeoutSeconds: 120,
+    responseTimeoutSeconds: 120,
+    timeoutPolicy: 'TIME_OUT_WF',
+    ownerEmail: projectsOwner,
+  },
+  {
+    name: 'project_parse_manifest',
+    description: 'Reads and parses the shipyard.manifest from the cloned project',
+    retryCount: 1,
+    retryLogic: 'FIXED',
+    retryDelaySeconds: 3,
+    timeoutSeconds: 15,
+    responseTimeoutSeconds: 10,
+    timeoutPolicy: 'TIME_OUT_WF',
+    ownerEmail: projectsOwner,
+  },
+  {
+    name: 'project_store_metadata',
+    description: 'Stores parsed manifest data (services, patterns) in the projects service',
+    retryCount: 2,
+    retryLogic: 'FIXED',
+    retryDelaySeconds: 3,
+    timeoutSeconds: 30,
+    responseTimeoutSeconds: 15,
+    timeoutPolicy: 'TIME_OUT_WF',
+    ownerEmail: projectsOwner,
+  },
+]
+
+export const projectSyncWorkflow: WorkflowDef = {
+  name: 'project_sync',
+  description: 'Clone a project repo, parse its manifest, and store metadata',
+  version: 1,
+  schemaVersion: 2,
+  ownerEmail: projectsOwner,
+  tasks: [
+    {
+      name: 'project_clone',
+      taskReferenceName: 'project_clone_ref',
+      type: 'SIMPLE',
+      inputParameters: {
+        projectId: '${workflow.input.projectId}',
+        repoUrl: '${workflow.input.repoUrl}',
+        branch: '${workflow.input.branch}',
+      },
+    },
+    {
+      name: 'project_parse_manifest',
+      taskReferenceName: 'project_parse_manifest_ref',
+      type: 'SIMPLE',
+      inputParameters: {
+        localPath: '${project_clone_ref.output.localPath}',
+      },
+    },
+    {
+      name: 'project_store_metadata',
+      taskReferenceName: 'project_store_metadata_ref',
+      type: 'SIMPLE',
+      inputParameters: {
+        projectId: '${workflow.input.projectId}',
+        localPath: '${project_clone_ref.output.localPath}',
+        manifestRaw: '${project_parse_manifest_ref.output.manifestRaw}',
+        services: '${project_parse_manifest_ref.output.services}',
+        patterns: '${project_parse_manifest_ref.output.patterns}',
+      },
+    },
+  ],
+  outputParameters: {
+    localPath: '${project_clone_ref.output.localPath}',
+    hasManifest: '${project_parse_manifest_ref.output.hasManifest}',
+    servicesStored: '${project_store_metadata_ref.output.servicesStored}',
+    patternsStored: '${project_store_metadata_ref.output.patternsStored}',
+  },
+}
+
 // --- Onboarding workflow ---
 
 export const taskDefs: TaskDef[] = [
