@@ -53,5 +53,14 @@ export default defineNuxtConfig({
     },
   },
 
+  nitro: {
+    storage: {
+      oidc: {
+        driver: 'fs',
+        base: '.data/oidc',
+      },
+    },
+  },
+
   compatibilityDate: '2025-01-01',
 })
