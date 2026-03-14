@@ -125,26 +125,6 @@ async function addTaskLog(taskId: string, log: string) {
   }
 }
 
-/** Stream a partial response to the chat UI via pubsub (no DB persistence). */
-async function streamToChat(conversationId: string, text: string) {
-  try {
-    await fetch(config.agents.graphqlUrl, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        query: `mutation($input: AgentsStreamChunkInput!) {
-          agents { conversations { streamChunk(input: $input) } }
-        }`,
-        variables: {
-          input: { conversationId, text },
-        },
-      }),
-    })
-  } catch {
-    // best effort
-  }
-}
-
 export async function handleAgentInvokeClaude(task: any): Promise<TaskResult> {
   const { text, messages, conversationId, localPath } = task.inputData ?? {}
   let promptFile: string | undefined
@@ -191,7 +171,7 @@ export async function handleAgentInvokeClaude(task: any): Promise<TaskResult> {
           addTaskLog(task.taskId, `[streaming] ${accumulated.length} chars so far`)
 
           if (conversationId) {
-            // Publish stream chunk via Kafka (primary path)
+            // Publish stream chunk via Kafka
             const chunkEvent: ChatStreamChunkEvent = {
               type: 'chat.stream.chunk',
               conversationId,
@@ -200,9 +180,6 @@ export async function handleAgentInvokeClaude(task: any): Promise<TaskResult> {
               timestamp: new Date().toISOString(),
             }
             publishChatEvent(conversationId, chunkEvent).catch(() => {})
-
-            // Also push via direct GraphQL for backward compatibility
-            streamToChat(conversationId, accumulated)
           }
         },
         onToolUse(toolName) {

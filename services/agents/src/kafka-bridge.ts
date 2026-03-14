@@ -56,6 +56,8 @@ export async function startKafkaBridge(signal: AbortSignal): Promise<void> {
       const event = decode<AgentChatEvent>(message.value)
       if (!event) return
 
+      console.log(`[kafka-bridge] received event: ${event.type} for conversation ${event.conversationId}`)
+
       try {
         switch (event.type) {
           case 'chat.stream.chunk':
@@ -70,15 +72,9 @@ export async function startKafkaBridge(signal: AbortSignal): Promise<void> {
             break
 
           case 'chat.response.complete':
-            // Final response — the deliver-response worker will persist it,
-            // but we can push it immediately for latency
-            publishToWebSocket(event.conversationId, {
-              id: `complete-${Date.now()}`,
-              conversationId: event.conversationId,
-              role: 'assistant',
-              text: event.response,
-              createdAt: event.timestamp,
-            })
+            // The deliver-response worker will persist via addMessage,
+            // which publishes to WebSocket. No need to push here.
+            console.log(`[kafka-bridge] response complete for ${event.conversationId} (${event.response.length} chars)`)
             break
 
           case 'chat.error':
@@ -116,9 +112,10 @@ export async function startKafkaBridge(signal: AbortSignal): Promise<void> {
 
 function publishToWebSocket(conversationId: string, message: Record<string, unknown>) {
   if (!pubsubPublish) {
-    console.warn('[kafka-bridge] pubsub not registered yet, dropping message')
+    console.warn('[kafka-bridge] pubsub not registered yet, dropping message for', conversationId)
     return
   }
+  console.log(`[kafka-bridge] publishing to WebSocket: ${message.id} for ${conversationId}`)
   pubsubPublish({
     topic: 'AGENTS_MESSAGE_ADDED',
     payload: { agentsMessageAdded: message },
@@ -142,11 +139,7 @@ export async function sendChatStartCommand(conversationId: string, projectId: st
 }
 
 /** Send a chat.message command via Kafka (replaces REST call to orchestration). */
-export async function sendChatMessageCommand(
-  conversationId: string,
-  workflowId: string,
-  text: string,
-): Promise<void> {
+export async function sendChatMessageCommand(conversationId: string, workflowId: string, text: string): Promise<void> {
   const cmd: ChatMessageCommand = {
     type: 'chat.message',
     conversationId,

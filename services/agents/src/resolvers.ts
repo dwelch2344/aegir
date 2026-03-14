@@ -96,18 +96,12 @@ export const resolvers: ResolverMap<RequestCradle> = {
       this: RequestCradle,
       _: unknown,
       args: { input: { conversationId: string; text: string; projectId?: string } },
-      ctx: any,
+      _ctx: any,
     ) {
       const { conversationId, text, projectId } = args.input
 
       // Save user message
       const userMessage = await this.conversationsService.addMessage({ conversationId, role: 'user', text })
-
-      // Publish to subscription so user message appears in real-time
-      ctx.pubsub?.publish({
-        topic: 'AGENTS_MESSAGE_ADDED',
-        payload: { agentsMessageAdded: userMessage },
-      })
 
       // Auto-title from first user message
       const { results: msgs } = await this.conversationsService.messages(conversationId)
@@ -127,19 +121,29 @@ export const resolvers: ResolverMap<RequestCradle> = {
         await sendChatStartCommand(conversationId, projectId ?? null)
 
         // The orchestration service will consume this, start the workflow,
-        // and publish a chat.workflow.started event back. For now we use a
-        // placeholder workflowId that will be updated when the event arrives.
+        // and publish a chat.workflow.started event back. Store a placeholder
+        // that will be overwritten by the Kafka event handler.
         workflowId = `pending-${conversationId}`
         await this.conversationsService.update(conversationId, { workflowId })
 
-        // Brief pause so Conductor schedules the WAIT task before we signal it
-        await new Promise((r) => setTimeout(r, 1500))
+        // Poll until the real workflowId arrives (set by the Kafka event handler)
+        const maxWaitMs = 30_000
+        const pollIntervalMs = 500
+        const deadline = Date.now() + maxWaitMs
+        while (Date.now() < deadline) {
+          await new Promise((r) => setTimeout(r, pollIntervalMs))
+          const {
+            results: [updated],
+          } = await this.conversationsService.search({ idIn: [conversationId] })
+          if (updated?.workflowId && !updated.workflowId.startsWith('pending-')) {
+            workflowId = updated.workflowId
+            break
+          }
+        }
 
-        // Re-fetch to get the real workflowId (set by the Kafka event handler)
-        const {
-          results: [updated],
-        } = await this.conversationsService.search({ idIn: [conversationId] })
-        workflowId = updated?.workflowId ?? workflowId
+        if (workflowId.startsWith('pending-')) {
+          console.error(`[sendMessage] timed out waiting for real workflowId for conversation ${conversationId}`)
+        }
       }
 
       // Signal the WAIT task with the user's message via Kafka

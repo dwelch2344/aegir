@@ -143,7 +143,11 @@ export async function publishChatEvent(
   conversationId: string,
   event: import('@aegir/kafka').AgentChatEvent,
 ): Promise<void> {
-  if (!producer) return
+  if (!producer) {
+    console.warn(`[kafka-bridge] producer not ready, dropping ${event.type} for ${conversationId}`)
+    return
+  }
+  console.log(`[kafka-bridge] publishing ${event.type} to ${TOPICS.AGENT_CHAT_EVENTS} for ${conversationId}`)
   await producer.send({
     topic: TOPICS.AGENT_CHAT_EVENTS,
     messages: [{ key: conversationId, value: encode(event) }],

@@ -212,12 +212,13 @@ export function useAgent() {
           const incoming = msg.payload.data.agentsMessageAdded as ChatMessage
           const isStreamChunk = incoming.id.startsWith('stream-')
 
-          // Find an existing placeholder to replace: thinking-* or previous stream-*
+          // Find an existing placeholder to replace: thinking-*, stream-*, or complete-*
           const placeholderIdx = messages.value.findIndex(
-            (m) => m.id.startsWith('thinking-') || m.id.startsWith('stream-'),
+            (m) => m.id.startsWith('thinking-') || m.id.startsWith('stream-') || m.id.startsWith('complete-'),
           )
 
           if (placeholderIdx !== -1) {
+            // Replace the placeholder (or previous chunk) with the incoming message
             const updated = [...messages.value]
             updated[placeholderIdx] = incoming
             messages.value = updated
