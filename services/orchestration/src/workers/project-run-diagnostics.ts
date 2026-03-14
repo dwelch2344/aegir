@@ -128,7 +128,7 @@ Keep the report concise and actionable. Use markdown formatting.`
 
     // Save the report via GraphQL
     const gqlUrl = config.projects.graphqlUrl
-    await fetch(gqlUrl, {
+    const saveRes = await fetch(gqlUrl, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -140,6 +140,8 @@ Keep the report concise and actionable. Use markdown formatting.`
         },
       }),
     })
+    const saveData = (await saveRes.json()) as any
+    const reportId = saveData?.data?.projects?.projects?.saveDiagnosticsReport?.id
 
     await logProjectActivity({
       projectId,
@@ -148,6 +150,7 @@ Keep the report concise and actionable. Use markdown formatting.`
       taskName: 'project_run_diagnostics',
       status: 'COMPLETED',
       message: `Diagnostics complete (${report.trim().length} chars)`,
+      ...(reportId ? { reportId: String(reportId) } : {}),
     })
 
     return {
