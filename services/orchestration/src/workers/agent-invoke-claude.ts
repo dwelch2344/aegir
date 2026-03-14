@@ -11,10 +11,16 @@ interface StreamCallbacks {
   onChunk: (accumulated: string) => void
 }
 
-function runClaude(promptFile: string, env: NodeJS.ProcessEnv, callbacks?: StreamCallbacks): Promise<string> {
+function runClaude(
+  promptFile: string,
+  env: NodeJS.ProcessEnv,
+  callbacks?: StreamCallbacks,
+  cwd?: string,
+): Promise<string> {
   return new Promise((resolve, reject) => {
     const child = spawn('claude', ['-p', '--output-format', 'text', '--dangerously-skip-permissions'], {
       env,
+      cwd: cwd || undefined,
       stdio: ['pipe', 'pipe', 'pipe'],
     })
 
@@ -83,7 +89,7 @@ async function streamToChat(conversationId: string, text: string) {
 }
 
 export async function handleAgentInvokeClaude(task: any): Promise<TaskResult> {
-  const { text, messages, conversationId } = task.inputData ?? {}
+  const { text, messages, conversationId, localPath } = task.inputData ?? {}
   let promptFile: string | undefined
 
   try {
@@ -117,22 +123,27 @@ export async function handleAgentInvokeClaude(task: any): Promise<TaskResult> {
     const STREAM_INTERVAL = 2000
     let streamedOnce = false
 
-    const stdout = await runClaude(promptFile, env, {
-      onChunk(accumulated) {
-        const now = Date.now()
-        if (now - lastStreamAt < STREAM_INTERVAL) return
-        lastStreamAt = now
-        streamedOnce = true
+    const stdout = await runClaude(
+      promptFile,
+      env,
+      {
+        onChunk(accumulated) {
+          const now = Date.now()
+          if (now - lastStreamAt < STREAM_INTERVAL) return
+          lastStreamAt = now
+          streamedOnce = true
 
-        // Push to Conductor logs
-        addTaskLog(task.taskId, `[streaming] ${accumulated.length} chars so far`)
+          // Push to Conductor logs
+          addTaskLog(task.taskId, `[streaming] ${accumulated.length} chars so far`)
 
-        // Push partial response to the chat UI
-        if (conversationId) {
-          streamToChat(conversationId, accumulated)
-        }
+          // Push partial response to the chat UI
+          if (conversationId) {
+            streamToChat(conversationId, accumulated)
+          }
+        },
       },
-    })
+      localPath || undefined,
+    )
 
     const response = stdout.trim()
 

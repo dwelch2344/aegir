@@ -53,6 +53,7 @@ export const typeDefs = `
   input AgentsSendMessageInput {
     conversationId: ID!
     text: String!
+    projectId: ID
   }
 
   type AgentsSendMessageResult {

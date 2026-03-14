@@ -90,7 +90,7 @@ async function handleAgentSend() {
     ? `[Project context: "${project.value.name}", repo: ${project.value.repoUrl}, branch: ${project.value.branch}, local: ${project.value.localPath || 'not cloned'}]\n\n`
     : ''
 
-  await agent.sendMessage(contextPrefix + text)
+  await agent.sendMessage(contextPrefix + text, projectId)
 }
 
 function handleAgentKeydown(e: KeyboardEvent) {

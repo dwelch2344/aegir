@@ -114,10 +114,34 @@ export async function buildApp() {
   })
 
   // Agent chat — start a persistent conversation workflow
-  fastify.post<{ Body: { conversationId: string } }>('/agents/chat/start', async (req) => {
-    const { conversationId } = req.body
+  fastify.post<{ Body: { conversationId: string; projectId?: string } }>('/agents/chat/start', async (req) => {
+    const { conversationId, projectId } = req.body
+
+    // If projectId is provided, resolve localPath from the projects service
+    let localPath: string | null = null
+    if (projectId) {
+      try {
+        const res = await fetch(config.projects.graphqlUrl, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            query: `query($input: ProjectsProjectSearchInput!) {
+              projects { projects { search(input: $input) { results { localPath } } } }
+            }`,
+            variables: { input: { idIn: [projectId] } },
+          }),
+        })
+        const json = (await res.json()) as any
+        localPath = json.data?.projects?.projects?.search?.results?.[0]?.localPath ?? null
+      } catch {
+        // best effort — fall back to no cwd
+      }
+    }
+
     const workflowId = await startWorkflow('agent_chat_conversation', {
       conversationId,
+      projectId: projectId ?? null,
+      localPath,
     })
     return { workflowId }
   })
