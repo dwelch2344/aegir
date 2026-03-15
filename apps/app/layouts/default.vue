@@ -10,6 +10,7 @@ const navItems = [
   { label: "Projects", to: "/projects", icon: "folder" },
   { label: "Catalog", to: "/catalog", icon: "catalog" },
   { label: "Context", to: "/context", icon: "layers" },
+  { label: "Best Practices", to: "/best-practices", icon: "sparkles" },
   { label: "Agent", to: "/agent", icon: "chat" },
   { label: "Settings", to: "/settings", icon: "cog" },
 ];
@@ -215,6 +216,13 @@ onOrgSwitch(() => {
                 stroke-linecap="round"
                 stroke-linejoin="round"
                 d="M6.429 9.75 2.25 12l4.179 2.25m0-4.5 5.571 3 5.571-3m-11.142 0L2.25 7.5 12 2.25l9.75 5.25-4.179 2.25m0 0L12 12.75 6.429 9.75m11.142 0 4.179 2.25L12 17.25 2.25 12l4.179-2.25m11.142 0 4.179 2.25L12 22.5 2.25 17.25l4.179-2.25"
+              />
+            </template>
+            <template v-if="item.icon === 'sparkles'">
+              <path
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                d="M9.813 15.904 9 18.75l-.813-2.846a4.5 4.5 0 0 0-3.09-3.09L2.25 12l2.846-.813a4.5 4.5 0 0 0 3.09-3.09L9 5.25l.813 2.846a4.5 4.5 0 0 0 3.09 3.09L15.75 12l-2.846.813a4.5 4.5 0 0 0-3.09 3.09ZM18.259 8.715 18 9.75l-.259-1.035a3.375 3.375 0 0 0-2.455-2.456L14.25 6l1.036-.259a3.375 3.375 0 0 0 2.455-2.456L18 2.25l.259 1.035a3.375 3.375 0 0 0 2.455 2.456L21.75 6l-1.036.259a3.375 3.375 0 0 0-2.455 2.456ZM16.894 20.567 16.5 21.75l-.394-1.183a2.25 2.25 0 0 0-1.423-1.423L13.5 18.75l1.183-.394a2.25 2.25 0 0 0 1.423-1.423l.394-1.183.394 1.183a2.25 2.25 0 0 0 1.423 1.423l1.183.394-1.183.394a2.25 2.25 0 0 0-1.423 1.423Z"
               />
             </template>
             <template v-if="item.icon === 'chat'">

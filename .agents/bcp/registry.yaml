@@ -1,0 +1,65 @@
+# Best Current Practices (BCP) Registry — v0.1.0
+#
+# This file indexes all Best Current Practice documents available to AI agents
+# and developers. BCPs capture general architectural knowledge, design patterns,
+# and proven approaches — unlike context files (which describe project state),
+# BCPs describe HOW things should be built.
+#
+# Structure:
+#   - Categories group related BCPs by domain
+#   - Each entry is a markdown file with a stable ID
+#   - Entries are loaded on-demand when relevant to the current task
+#
+# Naming convention:
+#   - IDs use dot notation: category.topic (e.g., architecture.service-boundaries)
+#   - Files live under their category folder
+
+version: "0.1.0"
+
+categories:
+  - id: architecture
+    label: Architecture
+    color: amber
+    description: >
+      Architectural patterns, service design, and system-level design principles.
+    entries: []
+
+  - id: api-design
+    label: API Design
+    color: blue
+    description: >
+      API design patterns, GraphQL conventions, REST guidelines, and
+      contract-first development practices.
+    entries: []
+
+  - id: data
+    label: Data & Storage
+    color: emerald
+    description: >
+      Database design, migration strategies, caching patterns, and
+      data modeling best practices.
+    entries: []
+
+  - id: security
+    label: Security
+    color: red
+    description: >
+      Authentication, authorization, secrets management, and secure
+      coding practices.
+    entries: []
+
+  - id: testing
+    label: Testing
+    color: purple
+    description: >
+      Testing strategies, test architecture, coverage guidelines, and
+      quality assurance patterns.
+    entries: []
+
+  - id: infrastructure
+    label: Infrastructure
+    color: cyan
+    description: >
+      Deployment patterns, container strategies, CI/CD practices, and
+      infrastructure-as-code guidelines.
+    entries: []
