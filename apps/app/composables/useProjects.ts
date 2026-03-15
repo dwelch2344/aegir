@@ -75,6 +75,7 @@ interface Project {
   status: string
   lastSyncedAt: string | null
   manifestRaw: string | null
+  contextNotes: string | null
   createdAt: string
   updatedAt: string
   services: ProjectService[]
@@ -163,6 +164,20 @@ export function useProjects() {
     return result
   }
 
+  async function updateProject(id: string, input: Record<string, unknown>) {
+    const data = await gql<any>(
+      gatewayUrl,
+      `mutation($id: ID!, $input: ProjectsProjectUpdateInput!) { projects { projects { update(id: $id, input: $input) { id contextNotes } } } }`,
+      { id, input },
+    )
+    const updated = data.projects.projects.update
+    const idx = projects.value.findIndex((p) => p.id === id)
+    if (idx >= 0 && updated) {
+      projects.value[idx] = { ...projects.value[idx], ...updated }
+    }
+    return updated
+  }
+
   async function syncProject(id: string) {
     const data = await gql<any>(gatewayUrl, SYNC_MUTATION, { id })
     return data.projects.projects.sync
@@ -233,6 +248,7 @@ export function useProjects() {
     loading,
     fetchProjects,
     fetchProject,
+    updateProject,
     addProject,
     scaffoldProject,
     syncProject,
@@ -251,7 +267,7 @@ const SEARCH_QUERY = `
         search(input: $input) {
           results {
             id organizationId name repoUrl branch localPath
-            status lastSyncedAt createdAt updatedAt
+            status lastSyncedAt contextNotes createdAt updatedAt
             services { id name type port }
             patterns { id patternId version appliedAt }
             statusReport { id issues servicesOk servicesMissing outdatedPatterns checkedAt }

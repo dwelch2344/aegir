@@ -20,6 +20,7 @@ export interface Project {
   status: string
   lastSyncedAt: string | null
   manifestRaw: string | null
+  contextNotes: string | null
   createdAt: string
   updatedAt: string
 }
@@ -72,7 +73,7 @@ export default class ProjectsService {
 
     const where = conditions.length ? `WHERE ${conditions.join(' AND ')}` : ''
     const results = await this.db.query<Project>(
-      `SELECT id, organization_id, name, repo_url, branch, local_path, status, last_synced_at, manifest_raw, created_at, updated_at
+      `SELECT id, organization_id, name, repo_url, branch, local_path, status, last_synced_at, manifest_raw, context_notes, created_at, updated_at
        FROM project ${where} ORDER BY updated_at DESC`,
       params,
     )
@@ -83,7 +84,7 @@ export default class ProjectsService {
     const rows = await this.db.query<Project>(
       `INSERT INTO project (organization_id, name, repo_url, branch)
        VALUES (:organizationId, :name, :repoUrl, :branch)
-       RETURNING id, organization_id, name, repo_url, branch, local_path, status, last_synced_at, manifest_raw, created_at, updated_at`,
+       RETURNING id, organization_id, name, repo_url, branch, local_path, status, last_synced_at, manifest_raw, context_notes, created_at, updated_at`,
       {
         organizationId: input.organizationId,
         name: input.name,
@@ -118,6 +119,10 @@ export default class ProjectsService {
       sets.push('manifest_raw = :manifestRaw')
       params.manifestRaw = input.manifestRaw
     }
+    if (input.contextNotes !== undefined) {
+      sets.push('context_notes = :contextNotes')
+      params.contextNotes = input.contextNotes
+    }
     if (input.lastSyncedAt !== undefined) {
       sets.push('last_synced_at = :lastSyncedAt')
       params.lastSyncedAt = input.lastSyncedAt
@@ -125,7 +130,7 @@ export default class ProjectsService {
 
     const rows = await this.db.query<Project>(
       `UPDATE project SET ${sets.join(', ')} WHERE id = :id
-       RETURNING id, organization_id, name, repo_url, branch, local_path, status, last_synced_at, manifest_raw, created_at, updated_at`,
+       RETURNING id, organization_id, name, repo_url, branch, local_path, status, last_synced_at, manifest_raw, context_notes, created_at, updated_at`,
       params,
     )
     return rows[0] ? serializeDates(rows[0]) : null

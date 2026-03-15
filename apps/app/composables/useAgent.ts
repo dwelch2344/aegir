@@ -11,6 +11,7 @@ export interface ChatMessage {
 export interface Conversation {
   id: string
   organizationId: number
+  projectId: string | null
   title: string
   workflowId: string | null
   createdAt: string
@@ -46,6 +47,7 @@ async function gql<T>(query: string, variables?: Record<string, unknown>): Promi
 // Shared reactive state
 const conversations = ref<Conversation[]>([])
 const activeId = ref<string | null>(null)
+const activeProjectId = ref<string | null>(null)
 const messages = ref<ChatMessage[]>([])
 const connected = ref(false)
 const connecting = ref(false)
@@ -64,13 +66,15 @@ export function useAgent() {
     return id
   }
 
-  async function fetchConversations() {
+  async function fetchConversations(projectId?: string) {
     loading.value = true
     try {
       const orgId = getOrgId()
+      const input: Record<string, unknown> = { organizationId: orgId }
+      if (projectId !== undefined) input.projectId = projectId
       const data = await gql<{ agents: { conversations: { search: { results: Conversation[] } } } }>(
-        `query($input: AgentsConversationSearchInput!) { agents { conversations { search(input: $input) { results { id organizationId title workflowId createdAt updatedAt } } } } }`,
-        { input: { organizationId: orgId } },
+        `query($input: AgentsConversationSearchInput!) { agents { conversations { search(input: $input) { results { id organizationId projectId title workflowId createdAt updatedAt } } } } }`,
+        { input },
       )
       conversations.value = data.agents.conversations.search.results
     } catch {
@@ -80,11 +84,14 @@ export function useAgent() {
     }
   }
 
-  async function createConversation(title?: string): Promise<string> {
+  async function createConversation(opts?: { title?: string; projectId?: string }): Promise<string> {
     const orgId = getOrgId()
+    const input: Record<string, unknown> = { organizationId: orgId }
+    if (opts?.title) input.title = opts.title
+    if (opts?.projectId) input.projectId = opts.projectId
     const data = await gql<{ agents: { conversations: { create: Conversation } } }>(
-      `mutation($input: AgentsConversationCreateInput!) { agents { conversations { create(input: $input) { id organizationId title workflowId createdAt updatedAt } } } }`,
-      { input: { organizationId: orgId, ...(title ? { title } : {}) } },
+      `mutation($input: AgentsConversationCreateInput!) { agents { conversations { create(input: $input) { id organizationId projectId title workflowId createdAt updatedAt } } } }`,
+      { input },
     )
     const convo = data.agents.conversations.create
     conversations.value.unshift(convo)
@@ -101,7 +108,7 @@ export function useAgent() {
       }>(
         `query($input: AgentsConversationSearchInput!) {
           agents { conversations { search(input: $input) {
-            results { id organizationId title workflowId createdAt updatedAt messages { id conversationId role text createdAt } }
+            results { id organizationId projectId title workflowId createdAt updatedAt messages { id conversationId role text createdAt } }
           } } }
         }`,
         { input: { idIn: [id] } },
@@ -154,7 +161,7 @@ export function useAgent() {
 
   async function addMessage(role: ChatMessage['role'], text: string) {
     if (!activeId.value) {
-      activeId.value = await createConversation()
+      activeId.value = await createConversation(activeProjectId.value ? { projectId: activeProjectId.value } : undefined)
     }
 
     const data = await gql<{ agents: { conversations: { addMessage: ChatMessage } } }>(
@@ -280,8 +287,9 @@ export function useAgent() {
   }
 
   async function sendMessage(message: string, projectId?: string) {
+    const effectiveProjectId = projectId ?? activeProjectId.value
     if (!activeId.value) {
-      activeId.value = await createConversation()
+      activeId.value = await createConversation(effectiveProjectId ? { projectId: effectiveProjectId } : undefined)
     }
 
     const conversationId = activeId.value!
@@ -334,7 +342,7 @@ export function useAgent() {
             workflowId
           } } }
         }`,
-        { input: { conversationId, text: message, ...(projectId ? { projectId } : {}) } },
+        { input: { conversationId, text: message, ...(effectiveProjectId ? { projectId: effectiveProjectId } : {}) } },
       )
 
       // Replace temp user message with the real persisted one
@@ -367,7 +375,7 @@ export function useAgent() {
   async function connectNotifications(topic?: string) {
     if (notifSocket) return
     if (!activeId.value) {
-      activeId.value = await createConversation()
+      activeId.value = await createConversation(activeProjectId.value ? { projectId: activeProjectId.value } : undefined)
     }
     connecting.value = true
 
@@ -430,10 +438,16 @@ export function useAgent() {
     processing.value = false
   }
 
+  /** Scope future conversations to a specific project */
+  function setProject(projectId: string | null) {
+    activeProjectId.value = projectId
+  }
+
   /** Reset state and refetch for the new org (called on org switch) */
   function handleOrgSwitch() {
     disconnectSockets()
     activeId.value = null
+    activeProjectId.value = null
     messages.value = []
     conversations.value = []
     fetchConversations()
@@ -442,13 +456,16 @@ export function useAgent() {
   return {
     conversations: readonly(conversations),
     activeId: readonly(activeId),
+    activeProjectId: readonly(activeProjectId),
     messages: readonly(messages),
     connected: readonly(connected),
     connecting: readonly(connecting),
     loading: readonly(loading),
     processing: readonly(processing),
     fetchConversations,
+    createConversation,
     newConversation,
+    setProject,
     loadConversation,
     deleteConversation,
     sendMessage,

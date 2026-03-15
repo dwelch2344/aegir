@@ -3,6 +3,7 @@ import type { Db } from '@moribashi/pg'
 export interface Conversation {
   id: string
   organizationId: number
+  projectId: string | null
   title: string
   workflowId: string | null
   createdAt: string
@@ -24,7 +25,7 @@ export default class ConversationsService {
     this.db = db
   }
 
-  async search(input: { idIn?: string[]; organizationId?: number } = {}) {
+  async search(input: { idIn?: string[]; organizationId?: number; projectId?: string | null } = {}) {
     const conditions: string[] = []
     const params: Record<string, unknown> = {}
 
@@ -36,19 +37,27 @@ export default class ConversationsService {
       conditions.push('organization_id = :organizationId')
       params.organizationId = input.organizationId
     }
+    if (input.projectId !== undefined) {
+      if (input.projectId === null) {
+        conditions.push('project_id IS NULL')
+      } else {
+        conditions.push('project_id = :projectId')
+        params.projectId = input.projectId
+      }
+    }
 
     const where = conditions.length ? `WHERE ${conditions.join(' AND ')}` : ''
     const results = await this.db.query<Conversation>(
-      `SELECT id, organization_id, title, workflow_id, created_at, updated_at FROM conversation ${where} ORDER BY updated_at DESC`,
+      `SELECT id, organization_id, project_id, title, workflow_id, created_at, updated_at FROM conversation ${where} ORDER BY updated_at DESC`,
       params,
     )
     return { results }
   }
 
-  async create(input: { organizationId: number; title?: string }) {
+  async create(input: { organizationId: number; projectId?: string; title?: string }) {
     const rows = await this.db.query<Conversation>(
-      `INSERT INTO conversation (organization_id, title) VALUES (:organizationId, :title) RETURNING id, organization_id, title, workflow_id, created_at, updated_at`,
-      { organizationId: input.organizationId, title: input.title || 'New conversation' },
+      `INSERT INTO conversation (organization_id, project_id, title) VALUES (:organizationId, :projectId, :title) RETURNING id, organization_id, project_id, title, workflow_id, created_at, updated_at`,
+      { organizationId: input.organizationId, projectId: input.projectId || null, title: input.title || 'New conversation' },
     )
     return rows[0]
   }
@@ -65,7 +74,7 @@ export default class ConversationsService {
       params.workflowId = input.workflowId
     }
     const rows = await this.db.query<Conversation>(
-      `UPDATE conversation SET ${sets.join(', ')} WHERE id = :id RETURNING id, organization_id, title, workflow_id, created_at, updated_at`,
+      `UPDATE conversation SET ${sets.join(', ')} WHERE id = :id RETURNING id, organization_id, project_id, title, workflow_id, created_at, updated_at`,
       params,
     )
     return rows[0] ?? null

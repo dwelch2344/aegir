@@ -9,7 +9,7 @@ function renderMarkdown(text: string): string {
   return marked.parse(text, { async: false }) as string
 }
 
-const { fetchProject, syncProject, deleteProject, checkStatus, applyPattern, runDiagnostics, subscribeToActivity } = useProjects()
+const { fetchProject, updateProject, syncProject, deleteProject, checkStatus, applyPattern, runDiagnostics, subscribeToActivity } = useProjects()
 const { catalog, catalogLoading, fetchCatalog } = useCatalog()
 const agent = useAgent()
 
@@ -23,7 +23,7 @@ const confirmDelete = ref(false)
 const deleting = ref(false)
 
 // Tabs
-const activeTab = ref<'overview' | 'patterns' | 'actions' | 'agent'>('overview')
+const activeTab = ref<'overview' | 'patterns' | 'actions' | 'context' | 'agent'>('overview')
 
 // Apply pattern form
 const applying = ref(false)
@@ -64,10 +64,38 @@ import type { ProjectActivityEvent } from '~/composables/useProjects'
 const activityEvents = ref<ProjectActivityEvent[]>([])
 let unsubActivity: (() => void) | null = null
 
+// Context notes
+const contextNotesEdit = ref('')
+const contextEditing = ref(false)
+const contextSaving = ref(false)
+
+function startEditContext() {
+  contextNotesEdit.value = project.value?.contextNotes || ''
+  contextEditing.value = true
+}
+
+async function saveContextNotes() {
+  contextSaving.value = true
+  try {
+    await updateProject(projectId, { contextNotes: contextNotesEdit.value || null })
+    if (project.value) project.value.contextNotes = contextNotesEdit.value || null
+    contextEditing.value = false
+  } catch (e: any) {
+    error.value = e.message || 'Failed to save context notes'
+  } finally {
+    contextSaving.value = false
+  }
+}
+
 // Agent chat
 const agentInput = ref('')
 const agentChatContainer = ref<HTMLElement | null>(null)
 const agentTextarea = ref<HTMLTextAreaElement | null>(null)
+
+// Project-scoped conversations
+const projectConversations = computed(() =>
+  agent.conversations.value.filter((c: any) => c.projectId === projectId)
+)
 
 function autoResizeAgent(el: HTMLTextAreaElement | null) {
   if (!el) return
@@ -93,15 +121,19 @@ watch(
 
 async function handleAgentSend() {
   const text = agentInput.value.trim()
-  if (!text) return
+  if (!text || agent.processing.value) return
   agentInput.value = ''
   nextTick(() => autoResizeAgent(agentTextarea.value))
 
   // Prepend project context to first message in the conversation
   const isFirst = agent.messages.value.length === 0
-  const contextPrefix = isFirst && project.value
-    ? `[Project context: "${project.value.name}", repo: ${project.value.repoUrl}, branch: ${project.value.branch}, local: ${project.value.localPath || 'not cloned'}]\n\n`
-    : ''
+  let contextPrefix = ''
+  if (isFirst && project.value) {
+    contextPrefix = `[Project context: "${project.value.name}", repo: ${project.value.repoUrl}, branch: ${project.value.branch}, local: ${project.value.localPath || 'not cloned'}]\n\n`
+    if (project.value.contextNotes) {
+      contextPrefix += `[Project notes:\n${project.value.contextNotes}\n]\n\n`
+    }
+  }
 
   await agent.sendMessage(contextPrefix + text, projectId)
 }
@@ -114,12 +146,31 @@ function handleAgentKeydown(e: KeyboardEvent) {
 }
 
 function stripContextPrefix(text: string): string {
-  return text.replace(/^\[Project context:[^\]]*\]\n\n/, '')
+  return text.replace(/^\[Project context:[^\]]*\]\n\n/, '').replace(/^\[Project notes:\n[\s\S]*?\n\]\n\n/, '')
 }
 
 function handleNewAgentChat() {
   agent.disconnect()
   agent.newConversation()
+}
+
+function handleResumeAgentChat(id: string) {
+  agent.disconnect()
+  agent.loadConversation(id)
+}
+
+function handleDeleteAgentChat(id: string) {
+  agent.deleteConversation(id)
+}
+
+function formatAgentTime(iso: string) {
+  const d = new Date(iso)
+  const now = new Date()
+  const diff = now.getTime() - d.getTime()
+  if (diff < 60_000) return 'Just now'
+  if (diff < 3_600_000) return `${Math.floor(diff / 60_000)}m ago`
+  if (diff < 86_400_000) return `${Math.floor(diff / 3_600_000)}h ago`
+  return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
 }
 
 async function load() {
@@ -275,6 +326,9 @@ function formatDate(iso: string | null) {
 onMounted(() => {
   load()
   fetchCatalog()
+  // Scope agent to this project and load its conversation history
+  agent.setProject(projectId)
+  agent.fetchConversations(projectId)
   unsubActivity = subscribeToActivity(projectId, (event) => {
     activityEvents.value.unshift(event)
     // Auto-refresh project data on terminal statuses
@@ -296,6 +350,7 @@ onMounted(() => {
 onUnmounted(() => {
   if (unsubActivity) unsubActivity()
   agent.disconnect()
+  agent.setProject(null)
 })
 </script>
 
@@ -347,6 +402,7 @@ onUnmounted(() => {
             { key: 'overview', label: 'Overview' },
             { key: 'patterns', label: 'Patterns' },
             { key: 'actions', label: 'Actions' },
+            { key: 'context', label: 'Context' },
             { key: 'agent', label: 'Agent' },
           ]"
           :key="tab.key"
@@ -819,91 +875,200 @@ onUnmounted(() => {
         </div>
       </div>
 
-      <!-- ==================== AGENT TAB ==================== -->
-      <ClientOnly>
-        <div v-if="activeTab === 'agent'" class="flex flex-col" style="height: calc(100vh - 14rem)">
-          <!-- Chat header -->
+      <!-- ==================== CONTEXT TAB ==================== -->
+      <div v-if="activeTab === 'context'" class="space-y-6">
+        <div>
           <div class="flex items-center justify-between mb-3">
-            <p class="text-sm text-gray-400">
-              Chat with Claude about <span class="text-gray-200">{{ project.name }}</span>
-            </p>
+            <div>
+              <h2 class="text-sm font-medium text-gray-300">Project Context Notes</h2>
+              <p class="text-xs text-gray-500 mt-1">
+                Context that the agent loads when chatting about this project.
+                Include domain knowledge, conventions, key decisions, and anything that helps the agent understand this project.
+              </p>
+            </div>
             <button
-              class="text-xs px-2.5 py-1 rounded bg-gray-800 text-gray-400 hover:text-gray-200 hover:bg-gray-700 transition-colors"
-              @click="handleNewAgentChat"
+              v-if="!contextEditing"
+              class="text-xs px-3 py-1.5 rounded bg-gray-800 text-gray-400 hover:text-gray-200 hover:bg-gray-700 transition-colors"
+              @click="startEditContext"
             >
-              + New chat
+              Edit
             </button>
           </div>
 
-          <!-- Messages -->
-          <div
-            ref="agentChatContainer"
-            class="flex-1 overflow-y-auto rounded-lg bg-gray-800/50 border border-gray-700 px-4 py-4 space-y-4"
-          >
-            <div v-if="agent.messages.value.length === 0" class="flex flex-col items-center justify-center h-full text-center">
-              <div class="w-10 h-10 rounded-full bg-emerald-500/20 flex items-center justify-center mb-3">
-                <svg class="w-5 h-5 text-emerald-400" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24">
-                  <path stroke-linecap="round" stroke-linejoin="round" d="M9.813 15.904 9 18.75l-.813-2.846a4.5 4.5 0 0 0-3.09-3.09L2.25 12l2.846-.813a4.5 4.5 0 0 0 3.09-3.09L9 5.25l.813 2.846a4.5 4.5 0 0 0 3.09 3.09L15.75 12l-2.846.813a4.5 4.5 0 0 0-3.09 3.09ZM18.259 8.715 18 9.75l-.259-1.035a3.375 3.375 0 0 0-2.455-2.456L14.25 6l1.036-.259a3.375 3.375 0 0 0 2.455-2.456L18 2.25l.259 1.035a3.375 3.375 0 0 0 2.455 2.456L21.75 6l-1.036.259a3.375 3.375 0 0 0-2.455 2.456Z" />
-                </svg>
-              </div>
-              <p class="text-sm text-gray-400 mb-1">Ask anything about this project</p>
-              <p class="text-xs text-gray-600">Claude has context about the repo, branch, and local clone.</p>
-            </div>
+          <div v-if="contextEditing" class="space-y-3">
+            <textarea
+              v-model="contextNotesEdit"
+              rows="16"
+              placeholder="Enter project context notes...
 
-            <div
-              v-for="msg in agent.messages.value"
-              :key="msg.id"
-              class="flex"
-              :class="msg.role === 'user' ? 'justify-end' : 'justify-start'"
-            >
-              <div v-if="msg.role !== 'user'" class="flex items-start gap-3 max-w-[80%]">
-                <div class="w-6 h-6 rounded-full bg-emerald-500/20 flex items-center justify-center shrink-0 mt-0.5">
-                  <svg class="w-3.5 h-3.5 text-emerald-400" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24">
-                    <path stroke-linecap="round" stroke-linejoin="round" d="M9.813 15.904 9 18.75l-.813-2.846a4.5 4.5 0 0 0-3.09-3.09L2.25 12l2.846-.813a4.5 4.5 0 0 0 3.09-3.09L9 5.25l.813 2.846a4.5 4.5 0 0 0 3.09 3.09L15.75 12l-2.846.813a4.5 4.5 0 0 0-3.09 3.09ZM18.259 8.715 18 9.75l-.259-1.035a3.375 3.375 0 0 0-2.455-2.456L14.25 6l1.036-.259a3.375 3.375 0 0 0 2.455-2.456L18 2.25l.259 1.035a3.375 3.375 0 0 0 2.455 2.456L21.75 6l-1.036.259a3.375 3.375 0 0 0-2.455 2.456Z" />
-                  </svg>
-                </div>
-                <div
-                  class="rounded-2xl rounded-tl-sm px-4 py-2.5 text-sm"
-                  :class="[
-                    msg.role === 'system' ? 'bg-amber-500/10 text-amber-300' : 'bg-gray-800 text-gray-100',
-                    msg.text === '...' && msg.id.startsWith('thinking-') ? 'animate-pulse' : '',
-                    msg.role === 'assistant' ? 'prose-chat' : '',
-                  ]"
-                >
-                  <div v-if="msg.role === 'assistant'" v-html="renderMarkdown(msg.text)" />
-                  <template v-else>{{ msg.text }}</template>
-                </div>
-              </div>
-
-              <div v-else class="max-w-[80%]">
-                <div class="rounded-2xl rounded-tr-sm bg-emerald-600 px-4 py-2.5 text-sm text-white whitespace-pre-wrap">
-                  {{ stripContextPrefix(msg.text) }}
-                </div>
-              </div>
+Examples:
+- This project uses a monorepo with pnpm workspaces
+- Authentication is handled via Keycloak OIDC
+- The API follows GraphQL federation patterns
+- Key domain terms: Ship = project, Catalog = pattern library
+- Never modify files under packages/domain/
+- Database migrations use Flyway naming (V0.0.X__description.sql)"
+              class="w-full bg-gray-900 border border-gray-700 rounded-lg px-4 py-3 text-sm text-gray-100 placeholder-gray-600 resize-y outline-none focus:border-emerald-500/50 transition-colors"
+              style="background: #111827; color: #f3f4f6"
+            />
+            <div class="flex items-center gap-2">
+              <button
+                :disabled="contextSaving"
+                class="text-xs px-3 py-1.5 rounded bg-emerald-600 text-white hover:bg-emerald-500 disabled:opacity-50 transition-colors"
+                @click="saveContextNotes"
+              >
+                {{ contextSaving ? 'Saving...' : 'Save' }}
+              </button>
+              <button
+                :disabled="contextSaving"
+                class="text-xs px-3 py-1.5 rounded bg-gray-800 text-gray-400 hover:text-gray-200 hover:bg-gray-700 disabled:opacity-50 transition-colors"
+                @click="contextEditing = false"
+              >
+                Cancel
+              </button>
             </div>
           </div>
 
-          <!-- Input -->
-          <div class="mt-3">
-            <div class="rounded-xl border border-gray-700 bg-gray-900 px-3 py-2 flex items-end gap-2">
-              <textarea
-                ref="agentTextarea"
-                v-model="agentInput"
-                placeholder="Ask about this project..."
-                rows="1"
-                class="flex-1 bg-transparent text-gray-100 placeholder-gray-500 resize-none outline-none text-sm leading-6 border-none max-h-36 overflow-y-auto"
-                style="background: transparent; color: #f3f4f6"
-                @keydown="handleAgentKeydown"
-              />
+          <div v-else>
+            <div v-if="project.contextNotes" class="bg-gray-900/50 border border-gray-700 rounded-lg px-4 py-3">
+              <div class="prose-chat text-sm text-gray-300" v-html="renderMarkdown(project.contextNotes)" />
+            </div>
+            <div v-else class="bg-gray-900/50 border border-gray-700/50 rounded-lg px-4 py-6 text-center">
+              <p class="text-sm text-gray-500">No context notes yet.</p>
               <button
-                class="p-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white transition-colors disabled:opacity-30 disabled:cursor-not-allowed shrink-0"
-                :disabled="!agentInput.trim()"
-                @click="handleAgentSend"
+                class="mt-2 text-xs text-emerald-400 hover:text-emerald-300 transition-colors"
+                @click="startEditContext"
               >
-                <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
-                  <path stroke-linecap="round" stroke-linejoin="round" d="M4.5 10.5 12 3m0 0 7.5 7.5M12 3v18" />
-                </svg>
+                Add context notes
               </button>
+            </div>
+          </div>
+        </div>
+
+        <div class="border-t border-gray-700 pt-4">
+          <h3 class="text-xs font-medium text-gray-400 uppercase tracking-wider mb-2">How context is used</h3>
+          <ul class="text-xs text-gray-500 space-y-1.5">
+            <li>Context notes are automatically prepended when the agent starts a new conversation about this project.</li>
+            <li>Use this to capture domain knowledge, architecture decisions, and conventions specific to this project.</li>
+            <li>The agent also has access to the project's manifest, repo URL, branch, and local clone path.</li>
+          </ul>
+        </div>
+      </div>
+
+      <!-- ==================== AGENT TAB ==================== -->
+      <ClientOnly>
+        <div v-if="activeTab === 'agent'" class="flex rounded-lg border border-gray-700 overflow-hidden" style="height: calc(100vh - 14rem)">
+          <!-- Conversation history sidebar -->
+          <div class="w-52 border-r border-gray-700 flex flex-col shrink-0 bg-gray-900/50">
+            <div class="px-3 py-2.5 border-b border-gray-700 flex items-center justify-between">
+              <span class="text-xs font-medium text-gray-400 uppercase tracking-wider">History</span>
+              <button
+                class="text-xs px-2 py-0.5 rounded bg-gray-800 text-gray-400 hover:text-gray-200 hover:bg-gray-700 transition-colors"
+                @click="handleNewAgentChat"
+              >
+                + New
+              </button>
+            </div>
+            <div class="flex-1 overflow-y-auto">
+              <div v-if="projectConversations.length === 0" class="px-3 py-4 text-xs text-gray-600">
+                No conversations yet
+              </div>
+              <button
+                v-for="convo in projectConversations"
+                :key="convo.id"
+                class="w-full text-left px-3 py-2 border-b border-gray-800/50 transition-colors group"
+                :class="convo.id === agent.activeId.value ? 'bg-gray-800/70 text-gray-100' : 'text-gray-400 hover:bg-gray-800/40 hover:text-gray-200'"
+                @click="handleResumeAgentChat(convo.id)"
+              >
+                <div class="flex items-start justify-between gap-1">
+                  <p class="text-xs truncate flex-1">{{ convo.title }}</p>
+                  <button
+                    class="text-gray-600 hover:text-red-400 opacity-0 group-hover:opacity-100 transition-opacity shrink-0 text-xs"
+                    title="Delete"
+                    @click.stop="handleDeleteAgentChat(convo.id)"
+                  >
+                    &times;
+                  </button>
+                </div>
+                <p class="text-[10px] text-gray-600 mt-0.5">{{ formatAgentTime(convo.updatedAt) }}</p>
+              </button>
+            </div>
+          </div>
+
+          <!-- Chat area -->
+          <div class="flex-1 flex flex-col min-w-0">
+            <!-- Messages -->
+            <div
+              ref="agentChatContainer"
+              class="flex-1 overflow-y-auto px-4 py-4 space-y-4"
+            >
+              <div v-if="agent.messages.value.length === 0" class="flex flex-col items-center justify-center h-full text-center">
+                <div class="w-10 h-10 rounded-full bg-emerald-500/20 flex items-center justify-center mb-3">
+                  <svg class="w-5 h-5 text-emerald-400" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M9.813 15.904 9 18.75l-.813-2.846a4.5 4.5 0 0 0-3.09-3.09L2.25 12l2.846-.813a4.5 4.5 0 0 0 3.09-3.09L9 5.25l.813 2.846a4.5 4.5 0 0 0 3.09 3.09L15.75 12l-2.846.813a4.5 4.5 0 0 0-3.09 3.09ZM18.259 8.715 18 9.75l-.259-1.035a3.375 3.375 0 0 0-2.455-2.456L14.25 6l1.036-.259a3.375 3.375 0 0 0 2.455-2.456L18 2.25l.259 1.035a3.375 3.375 0 0 0 2.455 2.456L21.75 6l-1.036.259a3.375 3.375 0 0 0-2.455 2.456Z" />
+                  </svg>
+                </div>
+                <p class="text-sm text-gray-400 mb-1">Ask anything about <span class="text-gray-200">{{ project.name }}</span></p>
+                <p class="text-xs text-gray-600">Claude has context about the repo, branch, and local clone.</p>
+                <p class="text-xs text-gray-600 mt-1">Previous conversations are saved in the sidebar.</p>
+              </div>
+
+              <div
+                v-for="msg in agent.messages.value"
+                :key="msg.id"
+                class="flex"
+                :class="msg.role === 'user' ? 'justify-end' : 'justify-start'"
+              >
+                <div v-if="msg.role !== 'user'" class="flex items-start gap-3 max-w-[80%]">
+                  <div class="w-6 h-6 rounded-full bg-emerald-500/20 flex items-center justify-center shrink-0 mt-0.5">
+                    <svg class="w-3.5 h-3.5 text-emerald-400" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24">
+                      <path stroke-linecap="round" stroke-linejoin="round" d="M9.813 15.904 9 18.75l-.813-2.846a4.5 4.5 0 0 0-3.09-3.09L2.25 12l2.846-.813a4.5 4.5 0 0 0 3.09-3.09L9 5.25l.813 2.846a4.5 4.5 0 0 0 3.09 3.09L15.75 12l-2.846.813a4.5 4.5 0 0 0-3.09 3.09ZM18.259 8.715 18 9.75l-.259-1.035a3.375 3.375 0 0 0-2.455-2.456L14.25 6l1.036-.259a3.375 3.375 0 0 0 2.455-2.456L18 2.25l.259 1.035a3.375 3.375 0 0 0 2.455 2.456L21.75 6l-1.036.259a3.375 3.375 0 0 0-2.455 2.456Z" />
+                    </svg>
+                  </div>
+                  <div
+                    class="rounded-2xl rounded-tl-sm px-4 py-2.5 text-sm"
+                    :class="[
+                      msg.role === 'system' ? 'bg-amber-500/10 text-amber-300' : 'bg-gray-800 text-gray-100',
+                      msg.text === '...' && msg.id.startsWith('thinking-') ? 'animate-pulse' : '',
+                      msg.role === 'assistant' ? 'prose-chat' : '',
+                    ]"
+                  >
+                    <div v-if="msg.role === 'assistant'" v-html="renderMarkdown(msg.text)" />
+                    <template v-else>{{ msg.text }}</template>
+                  </div>
+                </div>
+
+                <div v-else class="max-w-[80%]">
+                  <div class="rounded-2xl rounded-tr-sm bg-emerald-600 px-4 py-2.5 text-sm text-white whitespace-pre-wrap">
+                    {{ stripContextPrefix(msg.text) }}
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <!-- Input -->
+            <div class="border-t border-gray-700 px-4 py-3">
+              <div class="rounded-xl border border-gray-700 bg-gray-900 px-3 py-2 flex items-end gap-2">
+                <textarea
+                  ref="agentTextarea"
+                  v-model="agentInput"
+                  :placeholder="agent.processing.value ? 'Waiting for response...' : 'Ask about this project...'"
+                  :disabled="agent.processing.value"
+                  rows="1"
+                  class="flex-1 bg-transparent text-gray-100 placeholder-gray-500 resize-none outline-none text-sm leading-6 border-none max-h-36 overflow-y-auto disabled:opacity-50 disabled:cursor-not-allowed"
+                  style="background: transparent; color: #f3f4f6"
+                  @keydown="handleAgentKeydown"
+                />
+                <button
+                  class="p-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white transition-colors disabled:opacity-30 disabled:cursor-not-allowed shrink-0"
+                  :disabled="!agentInput.trim() || agent.processing.value"
+                  @click="handleAgentSend"
+                >
+                  <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M4.5 10.5 12 3m0 0 7.5 7.5M12 3v18" />
+                  </svg>
+                </button>
+              </div>
             </div>
           </div>
         </div>
