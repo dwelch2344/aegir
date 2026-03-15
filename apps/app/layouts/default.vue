@@ -9,6 +9,7 @@ const navItems = [
   { label: "Dashboard", to: "/dashboard", icon: "grid" },
   { label: "Projects", to: "/projects", icon: "folder" },
   { label: "Catalog", to: "/catalog", icon: "catalog" },
+  { label: "Context", to: "/context", icon: "layers" },
   { label: "Agent", to: "/agent", icon: "chat" },
   { label: "Settings", to: "/settings", icon: "cog" },
 ];
@@ -207,6 +208,13 @@ onOrgSwitch(() => {
                 stroke-linecap="round"
                 stroke-linejoin="round"
                 d="M12 6.042A8.967 8.967 0 0 0 6 3.75c-1.052 0-2.062.18-3 .512v14.25A8.987 8.987 0 0 1 6 18c2.305 0 4.408.867 6 2.292m0-14.25a8.966 8.966 0 0 1 6-2.292c1.052 0 2.062.18 3 .512v14.25A8.987 8.987 0 0 0 18 18a8.967 8.967 0 0 0-6 2.292m0-14.25v14.25"
+              />
+            </template>
+            <template v-if="item.icon === 'layers'">
+              <path
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                d="M6.429 9.75 2.25 12l4.179 2.25m0-4.5 5.571 3 5.571-3m-11.142 0L2.25 7.5 12 2.25l9.75 5.25-4.179 2.25m0 0L12 12.75 6.429 9.75m11.142 0 4.179 2.25L12 17.25 2.25 12l4.179-2.25m11.142 0 4.179 2.25L12 22.5 2.25 17.25l4.179-2.25"
               />
             </template>
             <template v-if="item.icon === 'chat'">
