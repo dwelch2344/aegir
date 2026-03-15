@@ -21,6 +21,15 @@
 - Don't assume tests exist — verify first
 - Integration tests hit real databases (no mocks for data-layer tests)
 
+## Version Control
+
+- **Always work on a branch** — never commit directly to `main`
+- **Commit before context-switching** — if work is in progress, commit (or stash) before moving to a different task; never leave dirty working trees across conversations
+- **Commit at logical checkpoints** — each commit should represent a coherent unit of work, not a dump of accumulated changes
+- **Push branches** — after committing, push to remote so work is not only local
+- **Branch naming** — use `feature/`, `fix/`, `chore/` prefixes matching the work type
+- **No orphaned work** — at session end, verify `git status` is clean; uncommitted changes are lost context
+
 ## Dependencies
 
 - Do not add new dependencies without explicit approval

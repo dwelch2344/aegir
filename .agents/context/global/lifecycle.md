@@ -49,6 +49,8 @@ For sessions longer than ~30 minutes or spanning multiple tasks:
 
 - **Drift check**: "Am I still working toward the original session intent?"
 - **Scope check**: "Have I stayed within the change budget (3 files, ~100 lines)?"
+- **Git hygiene check**: "Is my working tree clean? Do I have uncommitted work that
+  should be checkpointed?" If yes, commit with a descriptive message before continuing.
 - **Context refresh**: If a new topic has emerged (e.g., Kafka came up mid-task),
   load the relevant topic context files.
 
@@ -86,7 +88,15 @@ Mark items the agent was uncertain about:
 - Assumptions that should be validated by a human (tag: `[needs-review]`)
 - Areas where multiple valid approaches exist (tag: `[trade-off]`)
 
-### 5. Session Log Update
+### 5. Git Closeout
+
+Before logging the session:
+- Run `git status` — there should be **no uncommitted changes**
+- If changes exist: commit them with a clear message, or stash with a descriptive name
+- Push the working branch to remote (`git push -u origin <branch>`)
+- Verify: the branch is pushed and the working tree is clean
+
+### 6. Session Log Update
 
 Update `.agents/state/session-log.md` with a structured entry:
 
@@ -122,7 +132,7 @@ Update `.agents/state/session-log.md` with a structured entry:
 - {recommended next actions}
 ```
 
-### 6. Quality Feedback Loop (Retro)
+### 7. Quality Feedback Loop (Retro)
 
 If work from a previous session turned out to be wrong or incomplete:
 - Amend the original session log entry with a `### Retro ({date})` section
