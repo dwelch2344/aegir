@@ -50,6 +50,7 @@ const messages = ref<ChatMessage[]>([])
 const connected = ref(false)
 const connecting = ref(false)
 const loading = ref(false)
+const processing = ref(false)
 
 let notifSocket: WebSocket | null = null
 let agentSocket: WebSocket | null = null
@@ -108,9 +109,30 @@ export function useAgent() {
       const convo = data.agents.conversations.search.results[0]
       if (convo) {
         messages.value = convo.messages
+
+        // If the last message is from the user, the agent hasn't responded yet.
+        // Lock the input and wait for the response via subscription.
+        const lastMsg = convo.messages[convo.messages.length - 1]
+        if (lastMsg && lastMsg.role === 'user' && convo.workflowId) {
+          processing.value = true
+          // Add thinking placeholder so the UI shows the agent is working
+          messages.value = [
+            ...messages.value,
+            {
+              id: `thinking-${Date.now()}`,
+              conversationId: id,
+              role: 'assistant',
+              text: '...',
+              createdAt: new Date().toISOString(),
+            },
+          ]
+        } else {
+          processing.value = false
+        }
       }
     } catch {
       messages.value = []
+      processing.value = false
     }
 
     // Subscribe to real-time messages for this conversation
@@ -217,6 +239,14 @@ export function useAgent() {
             (m) => m.id.startsWith('thinking-') || m.id.startsWith('stream-') || m.id.startsWith('complete-'),
           )
 
+          // Detect final persisted message (not a placeholder ID)
+          const isFinalMessage =
+            !isStreamChunk &&
+            !incoming.id.startsWith('thinking-') &&
+            !incoming.id.startsWith('complete-') &&
+            !incoming.id.startsWith('error-') &&
+            incoming.role === 'assistant'
+
           if (placeholderIdx !== -1) {
             // Replace the placeholder (or previous chunk) with the incoming message
             const updated = [...messages.value]
@@ -230,6 +260,11 @@ export function useAgent() {
           } else {
             // First stream chunk, no placeholder yet — append
             messages.value = [...messages.value, incoming]
+          }
+
+          // Unlock input when the final persisted assistant message arrives
+          if (isFinalMessage) {
+            processing.value = false
           }
         }
       })
@@ -276,6 +311,7 @@ export function useAgent() {
     }
 
     // Thinking placeholder
+    processing.value = true
     messages.value = [
       ...messages.value,
       {
@@ -313,6 +349,7 @@ export function useAgent() {
       // Assistant response will arrive via the subscription — no polling needed
     } catch (err: any) {
       // Remove optimistic messages and show error
+      processing.value = false
       messages.value = messages.value.filter((m) => !m.id.startsWith('temp-') && !m.id.startsWith('thinking-'))
       messages.value = [
         ...messages.value,
@@ -383,12 +420,14 @@ export function useAgent() {
     }
     activeId.value = null
     messages.value = []
+    processing.value = false
   }
 
   function newConversation() {
     disconnectSockets()
     activeId.value = null
     messages.value = []
+    processing.value = false
   }
 
   /** Reset state and refetch for the new org (called on org switch) */
@@ -407,6 +446,7 @@ export function useAgent() {
     connected: readonly(connected),
     connecting: readonly(connecting),
     loading: readonly(loading),
+    processing: readonly(processing),
     fetchConversations,
     newConversation,
     loadConversation,

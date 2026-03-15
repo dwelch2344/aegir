@@ -12,6 +12,7 @@ const {
   activeId,
   messages,
   loading,
+  processing,
   fetchConversations,
   newConversation,
   loadConversation,
@@ -47,7 +48,7 @@ onMounted(() => {
 
 function handleSend() {
   const text = input.value.trim();
-  if (!text) return;
+  if (!text || processing.value) return;
   input.value = "";
   nextTick(() => {
     autoResize(welcomeTextarea.value);
@@ -202,7 +203,7 @@ onUnmounted(() => {
               <div class="flex items-center justify-end mt-2">
                 <button
                   class="p-2 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
-                  :disabled="!input.trim()"
+                  :disabled="!input.trim() || processing"
                   @click="handleSend"
                 >
                   <svg
@@ -295,15 +296,16 @@ onUnmounted(() => {
                 <textarea
                   ref="chatTextarea"
                   v-model="input"
-                  placeholder="Reply..."
+                  :placeholder="processing ? 'Waiting for response...' : 'Reply...'"
+                  :disabled="processing"
                   rows="1"
-                  class="flex-1 bg-transparent text-gray-100 placeholder-gray-500 resize-none outline-none text-sm leading-6 border-none max-h-48 overflow-y-auto"
+                  class="flex-1 bg-transparent text-gray-100 placeholder-gray-500 resize-none outline-none text-sm leading-6 border-none max-h-48 overflow-y-auto disabled:opacity-50 disabled:cursor-not-allowed"
                   style="background: transparent; color: #f3f4f6"
                   @keydown="handleKeydown"
                 />
                 <button
                   class="p-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white transition-colors disabled:opacity-30 disabled:cursor-not-allowed shrink-0"
-                  :disabled="!input.trim()"
+                  :disabled="!input.trim() || processing"
                   @click="handleSend"
                 >
                   <svg

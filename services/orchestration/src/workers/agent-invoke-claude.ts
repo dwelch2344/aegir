@@ -184,6 +184,18 @@ export async function handleAgentInvokeClaude(task: any): Promise<TaskResult> {
         },
         onToolUse(toolName) {
           addTaskLog(task.taskId, `[tool] ${toolName}`)
+
+          // Stream tool activity to the chat so users see what Claude is doing
+          if (conversationId) {
+            const toolChunk: ChatStreamChunkEvent = {
+              type: 'chat.stream.chunk',
+              conversationId,
+              text: `Using tool: ${toolName}...`,
+              done: false,
+              timestamp: new Date().toISOString(),
+            }
+            publishChatEvent(conversationId, toolChunk).catch(() => {})
+          }
         },
       },
       localPath || undefined,
