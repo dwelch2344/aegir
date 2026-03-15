@@ -1,0 +1,149 @@
+# Context Registry — v0.2.0
+#
+# This file indexes all context files available to AI agents. The loading
+# protocol uses this registry to decide what to load and when.
+#
+# Loading protocol:
+#   1. Always load everything in tiers.global (every session)
+#   2. Always load everything in tiers.project (every session in this repo)
+#   3. Scan the task/conversation for topic triggers
+#   4. For each matched topic, load BOTH the system-level AND project-level
+#      context file (if they exist)
+#   5. Re-evaluate triggers mid-session as new topics emerge
+#
+# Session lifecycle:
+#   Pre-session, mid-session checkpoints, and post-session steps are defined
+#   in global/lifecycle.md. The lifecycle protocol governs WHEN context is
+#   loaded/updated; this registry governs WHAT gets loaded.
+#
+# Context budget (guidelines to keep context window manageable):
+#   - Tier 1 (global):  ~1500 tokens
+#   - Tier 2 (project): ~1500 tokens
+#   - Tier 3 (topics):  ~1000 tokens per topic (system + project combined)
+
+version: "0.2.0"
+
+tiers:
+  global:
+    description: >
+      Always-loaded context. Core rules and standards that apply to every
+      session regardless of task. Keep this lean — every token here is
+      burned on every conversation.
+    files:
+      - path: global/operating-model.md
+        description: Agent governance — workflow, scope control, change budget
+      - path: global/coding-standards.md
+        description: Code quality, style, and safety baseline
+      - path: global/lifecycle.md
+        description: Session lifecycle — pre/post hooks, checkpoints, knowledge extraction
+
+  project:
+    description: >
+      Always-loaded when working in this specific repo. Domain knowledge,
+      active conventions, and current constraints.
+    files:
+      - path: project/conventions.md
+        description: Naming, file structure, and architectural conventions
+      - path: project/domain-context.md
+        description: Domain model summary and active constraints
+
+  topics:
+    description: >
+      Loaded on-demand when triggers match. Each topic has an optional
+      system-level file (general best practices) and an optional
+      project-level file (how this project uses the technology).
+    entries:
+      - id: graphql
+        system: topics/graphql.md
+        project: project/topics/graphql.md
+        triggers:
+          files:
+            - "**/schema.ts"
+            - "**/resolvers.ts"
+            - "**/gateway/**"
+            - "**/*.graphql"
+          keywords:
+            - graphql
+            - subgraph
+            - federation
+            - resolver
+            - mercurius
+            - schema
+          catalog_refs:
+            - api.graphql-federation
+            - service.domain-subgraph
+
+      - id: kafka
+        system: topics/kafka.md
+        project: project/topics/kafka.md
+        triggers:
+          files:
+            - "**/kafka/**"
+            - "**/cdc/**"
+            - "**/conductor-cdc/**"
+            - "**/*.avsc"
+          keywords:
+            - kafka
+            - redpanda
+            - debezium
+            - cdc
+            - avro
+            - consumer
+            - producer
+            - topic
+          catalog_refs:
+            - cdc.debezium-kafka
+
+      - id: conductor
+        system: topics/conductor.md
+        project: project/topics/conductor.md
+        triggers:
+          files:
+            - "**/orchestration/**"
+            - "**/conductor/**"
+            - "**/workflows/**"
+          keywords:
+            - conductor
+            - workflow
+            - orchestration
+            - task worker
+            - WAIT task
+            - DO_WHILE
+          catalog_refs:
+            - orchestration.conductor
+
+      - id: infrastructure
+        system: topics/infrastructure.md
+        project: project/topics/infrastructure.md
+        triggers:
+          files:
+            - "infra/**"
+            - ".devcontainer/**"
+            - "**/docker-compose*"
+            - "**/traefik/**"
+          keywords:
+            - terraform
+            - opentofu
+            - devcontainer
+            - docker
+            - traefik
+            - infrastructure
+          catalog_refs:
+            - harness.devcontainer
+            - infra.aws-eks-gitops
+
+      - id: testing
+        system: topics/testing.md
+        project: project/topics/testing.md
+        triggers:
+          files:
+            - "**/*.test.ts"
+            - "**/__qa__/**"
+            - "**/vitest*"
+          keywords:
+            - test
+            - vitest
+            - coverage
+            - qa
+            - adversarial
+          catalog_refs: []
