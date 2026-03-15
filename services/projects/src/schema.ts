@@ -17,6 +17,7 @@ export const typeDefs = `
     status: ProjectsStatus!
     lastSyncedAt: String
     manifestRaw: String
+    contextNotes: String
     createdAt: String!
     updatedAt: String!
     services: [ProjectsService!]!
@@ -147,6 +148,7 @@ export const typeDefs = `
     status: ProjectsStatus
     localPath: String
     manifestRaw: String
+    contextNotes: String
     lastSyncedAt: String
   }
 

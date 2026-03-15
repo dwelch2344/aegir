@@ -2,6 +2,7 @@ export const typeDefs = `
   type AgentsConversation @key(fields: "id") {
     id: ID!
     organizationId: Int!
+    projectId: ID
     title: String!
     workflowId: String
     createdAt: String!
@@ -24,6 +25,7 @@ export const typeDefs = `
   input AgentsConversationSearchInput {
     idIn: [ID!]
     organizationId: Int
+    projectId: ID
   }
 
   type AgentsConversations {
@@ -36,6 +38,7 @@ export const typeDefs = `
 
   input AgentsConversationCreateInput {
     organizationId: Int!
+    projectId: ID
     title: String
   }
 

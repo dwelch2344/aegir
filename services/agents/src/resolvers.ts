@@ -17,7 +17,7 @@ export const resolvers: ResolverMap<RequestCradle> = {
     conversations: () => ({}),
   },
   AgentsConversations: {
-    async search(this: RequestCradle, _: unknown, args: { input: { idIn?: string[]; organizationId?: number } }) {
+    async search(this: RequestCradle, _: unknown, args: { input: { idIn?: string[]; organizationId?: number; projectId?: string } }) {
       return this.conversationsService.search(args.input)
     },
   },
@@ -43,7 +43,7 @@ export const resolvers: ResolverMap<RequestCradle> = {
     conversations: () => ({}),
   },
   AgentsConversationsOps: {
-    async create(this: RequestCradle, _: unknown, args: { input: { organizationId: number; title?: string } }) {
+    async create(this: RequestCradle, _: unknown, args: { input: { organizationId: number; projectId?: string; title?: string } }) {
       return this.conversationsService.create(args.input)
     },
     async update(
