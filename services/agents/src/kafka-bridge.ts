@@ -123,7 +123,11 @@ function publishToWebSocket(conversationId: string, message: Record<string, unkn
 // ── Command producers ────────────────────────────────────────────
 
 /** Send a chat.start command via Kafka — triggers a short-lived per-message workflow. */
-export async function sendChatStartCommand(conversationId: string, projectId: string | null, text: string): Promise<void> {
+export async function sendChatStartCommand(
+  conversationId: string,
+  projectId: string | null,
+  text: string,
+): Promise<void> {
   const cmd: ChatStartCommand = {
     type: 'chat.start',
     conversationId,

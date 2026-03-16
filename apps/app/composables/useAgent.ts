@@ -161,7 +161,9 @@ export function useAgent() {
 
   async function addMessage(role: ChatMessage['role'], text: string) {
     if (!activeId.value) {
-      activeId.value = await createConversation(activeProjectId.value ? { projectId: activeProjectId.value } : undefined)
+      activeId.value = await createConversation(
+        activeProjectId.value ? { projectId: activeProjectId.value } : undefined,
+      )
     }
 
     const data = await gql<{ agents: { conversations: { addMessage: ChatMessage } } }>(
@@ -375,7 +377,9 @@ export function useAgent() {
   async function connectNotifications(topic?: string) {
     if (notifSocket) return
     if (!activeId.value) {
-      activeId.value = await createConversation(activeProjectId.value ? { projectId: activeProjectId.value } : undefined)
+      activeId.value = await createConversation(
+        activeProjectId.value ? { projectId: activeProjectId.value } : undefined,
+      )
     }
     connecting.value = true
 

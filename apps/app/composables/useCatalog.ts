@@ -33,6 +33,7 @@ async function gql<T>(gatewayUrl: string, query: string, variables?: Record<stri
 
 const catalog = ref<CatalogEntry[]>([])
 const catalogLoading = ref(false)
+const catalogError = ref<string | null>(null)
 
 export function useCatalog() {
   const config = useRuntimeConfig()
@@ -42,6 +43,7 @@ export function useCatalog() {
     if (catalog.value.length > 0) return // cached
     catalogLoading.value = true
     try {
+      catalogError.value = null
       const data = await gql<any>(gatewayUrl, CATALOG_QUERY)
       catalog.value = data.practices.catalog.entries.search.results.map((e: any) => ({
         id: e.id,
@@ -57,6 +59,7 @@ export function useCatalog() {
       }))
     } catch (err) {
       console.error('Failed to fetch catalog:', err)
+      catalogError.value = err instanceof Error ? err.message : 'Unknown error'
     } finally {
       catalogLoading.value = false
     }
@@ -66,7 +69,7 @@ export function useCatalog() {
     return catalog.value.find((e) => e.id === id || e.patternId === id)
   }
 
-  return { catalog, catalogLoading, fetchCatalog, getEntry }
+  return { catalog, catalogLoading, catalogError, fetchCatalog, getEntry }
 }
 
 const CATALOG_QUERY = `

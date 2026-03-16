@@ -7,7 +7,7 @@ function renderMarkdown(text: string): string {
   return marked.parse(text, { async: false }) as string
 }
 
-const { registry, registryLoading, saving, fetchRegistry, saveFile } = useBcpRegistry()
+const { registry, registryLoading, registryError, saving, fetchRegistry, saveFile } = useBcpRegistry()
 
 const activeCategory = ref<string | null>(null)
 const expandedEntry = ref<string | null>(null)
@@ -209,8 +209,18 @@ onMounted(fetchRegistry)
       </div>
     </template>
 
+    <div v-else-if="registryError" class="rounded-lg bg-red-900/20 border border-red-800/40 p-4">
+      <p class="text-sm text-red-300">Failed to load BCP registry: {{ registryError }}</p>
+      <button
+        class="mt-3 px-3 py-1.5 rounded text-sm bg-gray-700 text-gray-300 hover:bg-gray-600 transition-colors"
+        @click="fetchRegistry"
+      >
+        Retry
+      </button>
+    </div>
+
     <div v-else class="text-sm text-gray-500">
-      BCP registry not found. Ensure <code class="text-gray-400">.agents/bcp/registry.yaml</code> exists.
+      No BCP data found. Run <code class="text-gray-400">tsx services/practices/src/seed.ts</code> to populate the registry.
     </div>
   </div>
 </template>

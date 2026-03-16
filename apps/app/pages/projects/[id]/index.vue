@@ -10,7 +10,7 @@ function renderMarkdown(text: string): string {
 }
 
 const { fetchProject, updateProject, syncProject, deleteProject, checkStatus, applyPattern, runDiagnostics, subscribeToActivity } = useProjects()
-const { catalog, catalogLoading, fetchCatalog } = useCatalog()
+const { catalog, catalogLoading, catalogError, fetchCatalog } = useCatalog()
 const agent = useAgent()
 
 const project = ref<any>(null)
@@ -725,7 +725,11 @@ onUnmounted(() => {
           </table>
         </div>
 
-        <div v-if="patternRows.length === 0 && !catalogLoading" class="text-sm text-gray-500 mt-4">
+        <div v-if="catalogError && !catalogLoading" class="rounded-lg bg-red-900/20 border border-red-800/40 p-4 mt-4">
+          <p class="text-sm text-red-300">Failed to load catalog: {{ catalogError }}</p>
+          <button class="mt-2 text-sm text-emerald-400 hover:text-emerald-300" @click="fetchCatalog">Retry</button>
+        </div>
+        <div v-else-if="patternRows.length === 0 && !catalogLoading" class="text-sm text-gray-500 mt-4">
           No catalog patterns loaded. <button class="text-emerald-400 hover:text-emerald-300" @click="fetchCatalog">Retry</button>
         </div>
       </div>

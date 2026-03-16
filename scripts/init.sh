@@ -62,6 +62,21 @@ ensure_schema aegir iam iam_svc
 ensure_schema aegir projects "$PG_SUPERUSER"
 
 # ──────────────────────────────────────────────
+# Practices service (schema in aegir DB)
+# ──────────────────────────────────────────────
+ensure_schema aegir practices "$PG_SUPERUSER"
+
+# ──────────────────────────────────────────────
+# System service (schema in aegir DB)
+# ──────────────────────────────────────────────
+ensure_schema aegir system "$PG_SUPERUSER"
+
+# ──────────────────────────────────────────────
+# Agents service (schema in aegir DB)
+# ──────────────────────────────────────────────
+ensure_schema aegir agents "$PG_SUPERUSER"
+
+# ──────────────────────────────────────────────
 # Conductor (workflow engine) — needs REPLICATION for CDC
 # ──────────────────────────────────────────────
 ensure_user conductor conductor_dev REPLICATION

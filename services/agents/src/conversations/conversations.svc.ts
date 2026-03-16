@@ -57,7 +57,11 @@ export default class ConversationsService {
   async create(input: { organizationId: number; projectId?: string; title?: string }) {
     const rows = await this.db.query<Conversation>(
       `INSERT INTO conversation (organization_id, project_id, title) VALUES (:organizationId, :projectId, :title) RETURNING id, organization_id, project_id, title, workflow_id, created_at, updated_at`,
-      { organizationId: input.organizationId, projectId: input.projectId || null, title: input.title || 'New conversation' },
+      {
+        organizationId: input.organizationId,
+        projectId: input.projectId || null,
+        title: input.title || 'New conversation',
+      },
     )
     return rows[0]
   }

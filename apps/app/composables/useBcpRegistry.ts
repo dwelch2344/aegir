@@ -35,6 +35,7 @@ async function gql<T>(gatewayUrl: string, query: string, variables?: Record<stri
 
 const registry = ref<BcpRegistry | null>(null)
 const registryLoading = ref(false)
+const registryError = ref<string | null>(null)
 const saving = ref(false)
 
 export function useBcpRegistry() {
@@ -44,6 +45,7 @@ export function useBcpRegistry() {
   async function fetchRegistry() {
     registryLoading.value = true
     try {
+      registryError.value = null
       const data = await gql<any>(gatewayUrl, BCP_QUERY)
       const categories = data.practices.bcp.categories.search.results.map((cat: any) => ({
         id: cat.categoryId,
@@ -62,6 +64,7 @@ export function useBcpRegistry() {
       registry.value = { version: '0.1.0', categories }
     } catch (err) {
       console.error('Failed to fetch BCP registry:', err)
+      registryError.value = err instanceof Error ? err.message : 'Unknown error'
     } finally {
       registryLoading.value = false
     }
@@ -93,7 +96,7 @@ export function useBcpRegistry() {
     }
   }
 
-  return { registry, registryLoading, saving, fetchRegistry, saveFile }
+  return { registry, registryLoading, registryError, saving, fetchRegistry, saveFile }
 }
 
 const BCP_QUERY = `

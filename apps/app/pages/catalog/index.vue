@@ -1,5 +1,5 @@
 <script setup lang="ts">
-const { catalog, catalogLoading, fetchCatalog } = useCatalog()
+const { catalog, catalogLoading, catalogError, fetchCatalog } = useCatalog()
 const expandedId = ref<string | null>(null)
 
 function toggle(id: string) {
@@ -143,8 +143,18 @@ onMounted(fetchCatalog)
       </div>
     </div>
 
-    <div v-if="!catalogLoading && catalog.length === 0" class="text-sm text-gray-500 mt-4">
-      No catalog entries found. Check that the catalog directory exists.
+    <div v-if="!catalogLoading && catalogError" class="rounded-lg bg-red-900/20 border border-red-800/40 p-4 mt-4">
+      <p class="text-sm text-red-300">Failed to load catalog: {{ catalogError }}</p>
+      <button
+        class="mt-3 px-3 py-1.5 rounded text-sm bg-gray-700 text-gray-300 hover:bg-gray-600 transition-colors"
+        @click="fetchCatalog"
+      >
+        Retry
+      </button>
+    </div>
+
+    <div v-else-if="!catalogLoading && catalog.length === 0" class="text-sm text-gray-500 mt-4">
+      No catalog entries found. Run <code class="text-gray-400">tsx services/practices/src/seed.ts</code> to populate from disk.
     </div>
   </div>
 </template>

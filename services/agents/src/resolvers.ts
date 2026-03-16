@@ -17,7 +17,11 @@ export const resolvers: ResolverMap<RequestCradle> = {
     conversations: () => ({}),
   },
   AgentsConversations: {
-    async search(this: RequestCradle, _: unknown, args: { input: { idIn?: string[]; organizationId?: number; projectId?: string } }) {
+    async search(
+      this: RequestCradle,
+      _: unknown,
+      args: { input: { idIn?: string[]; organizationId?: number; projectId?: string } },
+    ) {
       return this.conversationsService.search(args.input)
     },
   },
@@ -43,7 +47,11 @@ export const resolvers: ResolverMap<RequestCradle> = {
     conversations: () => ({}),
   },
   AgentsConversationsOps: {
-    async create(this: RequestCradle, _: unknown, args: { input: { organizationId: number; projectId?: string; title?: string } }) {
+    async create(
+      this: RequestCradle,
+      _: unknown,
+      args: { input: { organizationId: number; projectId?: string; title?: string } },
+    ) {
       return this.conversationsService.create(args.input)
     },
     async update(
@@ -113,7 +121,9 @@ export const resolvers: ResolverMap<RequestCradle> = {
       // Resolve projectId — use provided value, or fall back to conversation's projectId
       let effectiveProjectId = projectId ?? null
       if (!effectiveProjectId) {
-        const { results: [convo] } = await this.conversationsService.search({ idIn: [conversationId] })
+        const {
+          results: [convo],
+        } = await this.conversationsService.search({ idIn: [conversationId] })
         effectiveProjectId = convo?.projectId ?? null
       }
 
