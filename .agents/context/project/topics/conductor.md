@@ -29,14 +29,14 @@ Claude CLI subprocess spawning.
 |----------|-------|---------|
 | `user_onboarding` | 3 | Sequential: validate → provision → email |
 | `select_health_aca_new_contract` | 8 | Sequential + WAIT (DocuSign) |
-| `agent_chat_conversation` | 4 | DO_WHILE loop until conversation closed |
+| `agent_chat_message` | 3 | Short-lived per-message: gather → invoke → deliver |
 | `project_sync` | 3 | Sequential: clone → parse → store |
 | `project_apply_pattern` | 4 | Apply → commit → reparse → store |
 | `project_scaffold` | 5 | Create → clone → init → parse → store |
 
 ## Kafka Integration
 
-- Consumes `agents.chat.commands` → starts/signals workflows
+- Consumes `agents.chat.commands` → starts per-message workflows
 - Produces `agents.chat.events` (stream chunks from Claude workers)
 - Produces `orchestration.workflow.lifecycle` (started/completed/failed)
 

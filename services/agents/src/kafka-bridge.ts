@@ -18,8 +18,6 @@ import {
   type AgentChatEvent,
   type AgentChatCommand,
   type ChatStartCommand,
-  type ChatMessageCommand,
-  type ChatCloseCommand,
 } from '@aegir/kafka'
 
 const kafka = createKafka('agents')
@@ -124,41 +122,13 @@ function publishToWebSocket(conversationId: string, message: Record<string, unkn
 
 // ── Command producers ────────────────────────────────────────────
 
-/** Send a chat.start command via Kafka (replaces REST call to orchestration). */
-export async function sendChatStartCommand(conversationId: string, projectId: string | null): Promise<void> {
+/** Send a chat.start command via Kafka — triggers a short-lived per-message workflow. */
+export async function sendChatStartCommand(conversationId: string, projectId: string | null, text: string): Promise<void> {
   const cmd: ChatStartCommand = {
     type: 'chat.start',
     conversationId,
     projectId,
-    timestamp: new Date().toISOString(),
-  }
-  await producer.send({
-    topic: TOPICS.AGENT_CHAT_COMMANDS,
-    messages: [{ key: conversationId, value: encode(cmd) }],
-  })
-}
-
-/** Send a chat.message command via Kafka (replaces REST call to orchestration). */
-export async function sendChatMessageCommand(conversationId: string, workflowId: string, text: string): Promise<void> {
-  const cmd: ChatMessageCommand = {
-    type: 'chat.message',
-    conversationId,
-    workflowId,
     text,
-    timestamp: new Date().toISOString(),
-  }
-  await producer.send({
-    topic: TOPICS.AGENT_CHAT_COMMANDS,
-    messages: [{ key: conversationId, value: encode(cmd) }],
-  })
-}
-
-/** Send a chat.close command via Kafka (replaces REST call to orchestration). */
-export async function sendChatCloseCommand(conversationId: string, workflowId: string): Promise<void> {
-  const cmd: ChatCloseCommand = {
-    type: 'chat.close',
-    conversationId,
-    workflowId,
     timestamp: new Date().toISOString(),
   }
   await producer.send({

@@ -11,25 +11,11 @@ export interface ChatStartCommand {
   type: 'chat.start'
   conversationId: string
   projectId: string | null
-  timestamp: string
-}
-
-export interface ChatMessageCommand {
-  type: 'chat.message'
-  conversationId: string
-  workflowId: string
   text: string
   timestamp: string
 }
 
-export interface ChatCloseCommand {
-  type: 'chat.close'
-  conversationId: string
-  workflowId: string
-  timestamp: string
-}
-
-export type AgentChatCommand = ChatStartCommand | ChatMessageCommand | ChatCloseCommand
+export type AgentChatCommand = ChatStartCommand
 
 // ── Agent Chat Events (workers/orchestration → agents) ─────────
 

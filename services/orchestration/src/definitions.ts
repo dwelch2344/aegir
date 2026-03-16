@@ -226,57 +226,46 @@ export const agentChatTaskDefs: TaskDef[] = [
   },
 ]
 
-export const agentChatWorkflow: WorkflowDef = {
-  name: 'agent_chat_conversation',
-  description: 'Long-lived agent chat — loops waiting for human messages until closed',
+export const agentChatMessageWorkflow: WorkflowDef = {
+  name: 'agent_chat_message',
+  description: 'Short-lived per-message workflow: gather context, invoke Claude, deliver response',
   version: 1,
   schemaVersion: 2,
   ownerEmail: agentChatOwner,
   tasks: [
     {
-      name: 'chat_loop',
-      taskReferenceName: 'chat_loop_ref',
-      type: 'DO_WHILE',
-      loopCondition: "$.agent_wait_for_message_ref['action'] != 'close'",
-      loopOver: [
-        {
-          name: 'agent_wait_for_message',
-          taskReferenceName: 'agent_wait_for_message_ref',
-          type: 'WAIT',
-          inputParameters: {},
-        },
-        {
-          name: 'agent_gather_context',
-          taskReferenceName: 'agent_gather_context_ref',
-          type: 'SIMPLE',
-          inputParameters: {
-            conversationId: '${workflow.input.conversationId}',
-          },
-        },
-        {
-          name: 'agent_invoke_claude',
-          taskReferenceName: 'agent_invoke_claude_ref',
-          type: 'SIMPLE',
-          inputParameters: {
-            conversationId: '${workflow.input.conversationId}',
-            localPath: '${workflow.input.localPath}',
-            text: '${agent_wait_for_message_ref.output.text}',
-            messages: '${agent_gather_context_ref.output.messages}',
-          },
-        },
-        {
-          name: 'agent_deliver_response',
-          taskReferenceName: 'agent_deliver_response_ref',
-          type: 'SIMPLE',
-          inputParameters: {
-            conversationId: '${workflow.input.conversationId}',
-            response: '${agent_invoke_claude_ref.output.response}',
-            streamed: '${agent_invoke_claude_ref.output.streamed}',
-          },
-        },
-      ],
+      name: 'agent_gather_context',
+      taskReferenceName: 'agent_gather_context_ref',
+      type: 'SIMPLE',
+      inputParameters: {
+        conversationId: '${workflow.input.conversationId}',
+      },
+    },
+    {
+      name: 'agent_invoke_claude',
+      taskReferenceName: 'agent_invoke_claude_ref',
+      type: 'SIMPLE',
+      inputParameters: {
+        conversationId: '${workflow.input.conversationId}',
+        localPath: '${workflow.input.localPath}',
+        text: '${workflow.input.text}',
+        messages: '${agent_gather_context_ref.output.messages}',
+      },
+    },
+    {
+      name: 'agent_deliver_response',
+      taskReferenceName: 'agent_deliver_response_ref',
+      type: 'SIMPLE',
+      inputParameters: {
+        conversationId: '${workflow.input.conversationId}',
+        response: '${agent_invoke_claude_ref.output.response}',
+        streamed: '${agent_invoke_claude_ref.output.streamed}',
+      },
     },
   ],
+  outputParameters: {
+    response: '${agent_deliver_response_ref.output.messageId}',
+  },
 }
 
 // --- Project sync workflow ---

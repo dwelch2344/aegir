@@ -19,7 +19,7 @@ import {
   type ChatWorkflowStartedEvent,
   type WorkflowLifecycleEvent,
 } from '@aegir/kafka'
-import { signalWaitTask, startWorkflow, getWorkflow } from './conductor.js'
+import { startWorkflow } from './conductor.js'
 import { config } from './config.js'
 
 const kafka = createKafka('orchestration')
@@ -41,17 +41,7 @@ export async function startKafkaBridge(signal: AbortSignal): Promise<void> {
       if (!cmd) return
 
       try {
-        switch (cmd.type) {
-          case 'chat.start':
-            await handleChatStart(cmd)
-            break
-          case 'chat.message':
-            await handleChatMessage(cmd)
-            break
-          case 'chat.close':
-            await handleChatClose(cmd)
-            break
-        }
+        await handleChatStart(cmd)
       } catch (err: any) {
         console.error(`[kafka-bridge] error handling ${cmd.type}: ${err.message}`)
       }
@@ -88,9 +78,10 @@ async function handleChatStart(cmd: Extract<AgentChatCommand, { type: 'chat.star
     }
   }
 
-  const workflowId = await startWorkflow('agent_chat_conversation', {
+  const workflowId = await startWorkflow('agent_chat_message', {
     conversationId: cmd.conversationId,
     projectId: cmd.projectId,
+    text: cmd.text,
     localPath,
   })
 
@@ -110,22 +101,9 @@ async function handleChatStart(cmd: Extract<AgentChatCommand, { type: 'chat.star
   await publishLifecycle({
     type: 'workflow.started',
     workflowId,
-    workflowName: 'agent_chat_conversation',
+    workflowName: 'agent_chat_message',
     input: { conversationId: cmd.conversationId, projectId: cmd.projectId },
     timestamp: new Date().toISOString(),
-  })
-}
-
-async function handleChatMessage(cmd: Extract<AgentChatCommand, { type: 'chat.message' }>) {
-  await signalWaitTask(cmd.workflowId, 'agent_wait_for_message_ref', {
-    text: cmd.text,
-    action: 'continue',
-  })
-}
-
-async function handleChatClose(cmd: Extract<AgentChatCommand, { type: 'chat.close' }>) {
-  await signalWaitTask(cmd.workflowId, 'agent_wait_for_message_ref', {
-    action: 'close',
   })
 }
 
