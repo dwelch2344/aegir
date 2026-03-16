@@ -6,8 +6,6 @@ export {
   type AgentChatCommand,
   type AgentChatEvent,
   type ChatStartCommand,
-  type ChatMessageCommand,
-  type ChatCloseCommand,
   type ChatStreamChunkEvent,
   type ChatResponseCompleteEvent,
   type ChatErrorEvent,

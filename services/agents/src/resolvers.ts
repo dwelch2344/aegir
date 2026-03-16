@@ -1,7 +1,7 @@
 import type { ResolverMap } from '@moribashi/graphql'
 import mercurius from 'mercurius'
 import type ConversationsService from './conversations/conversations.svc.js'
-import { sendChatStartCommand, sendChatMessageCommand } from './kafka-bridge.js'
+import { sendChatStartCommand } from './kafka-bridge.js'
 
 const { withFilter } = mercurius
 
@@ -110,46 +110,17 @@ export const resolvers: ResolverMap<RequestCradle> = {
         await this.conversationsService.update(conversationId, { title })
       }
 
-      // Check if conversation already has a persistent workflow
-      const {
-        results: [convo],
-      } = await this.conversationsService.search({ idIn: [conversationId] })
-      let workflowId = convo?.workflowId
-
-      if (!workflowId) {
-        // First message — publish chat.start command via Kafka
-        await sendChatStartCommand(conversationId, projectId ?? null)
-
-        // The orchestration service will consume this, start the workflow,
-        // and publish a chat.workflow.started event back. Store a placeholder
-        // that will be overwritten by the Kafka event handler.
-        workflowId = `pending-${conversationId}`
-        await this.conversationsService.update(conversationId, { workflowId })
-
-        // Poll until the real workflowId arrives (set by the Kafka event handler)
-        const maxWaitMs = 30_000
-        const pollIntervalMs = 500
-        const deadline = Date.now() + maxWaitMs
-        while (Date.now() < deadline) {
-          await new Promise((r) => setTimeout(r, pollIntervalMs))
-          const {
-            results: [updated],
-          } = await this.conversationsService.search({ idIn: [conversationId] })
-          if (updated?.workflowId && !updated.workflowId.startsWith('pending-')) {
-            workflowId = updated.workflowId
-            break
-          }
-        }
-
-        if (workflowId.startsWith('pending-')) {
-          console.error(`[sendMessage] timed out waiting for real workflowId for conversation ${conversationId}`)
-        }
+      // Resolve projectId — use provided value, or fall back to conversation's projectId
+      let effectiveProjectId = projectId ?? null
+      if (!effectiveProjectId) {
+        const { results: [convo] } = await this.conversationsService.search({ idIn: [conversationId] })
+        effectiveProjectId = convo?.projectId ?? null
       }
 
-      // Signal the WAIT task with the user's message via Kafka
-      await sendChatMessageCommand(conversationId, workflowId, text)
+      // Fire a short-lived workflow for this message via Kafka
+      await sendChatStartCommand(conversationId, effectiveProjectId, text)
 
-      return { userMessage, workflowId }
+      return { userMessage, workflowId: null }
     },
   },
   Subscription: {

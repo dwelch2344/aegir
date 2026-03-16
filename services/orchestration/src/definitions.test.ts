@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import {
   agentChatTaskDefs,
-  agentChatWorkflow,
+  agentChatMessageWorkflow,
   onboardingWorkflow,
   selectHealthAcaWorkflow,
   selectHealthTaskDefs,
@@ -80,22 +80,30 @@ describe('select health ACA workflow', () => {
   })
 })
 
-describe('agent chat workflow', () => {
+describe('agent chat message workflow', () => {
   it('has correct name', () => {
-    expect(agentChatWorkflow.name).toBe('agent_chat_conversation')
+    expect(agentChatMessageWorkflow.name).toBe('agent_chat_message')
   })
 
-  it('uses a DO_WHILE loop', () => {
-    const loop = agentChatWorkflow.tasks[0]
-    expect(loop.type).toBe('DO_WHILE')
-    expect(loop.loopCondition).toBeDefined()
-    expect(loop.loopOver).toBeDefined()
-    expect(loop.loopOver).toHaveLength(4)
+  it('defines 3 sequential tasks (no WAIT or DO_WHILE)', () => {
+    expect(agentChatMessageWorkflow.tasks).toHaveLength(3)
+    expect(agentChatMessageWorkflow.tasks.map((t) => t.name)).toEqual([
+      'agent_gather_context',
+      'agent_invoke_claude',
+      'agent_deliver_response',
+    ])
+    expect(agentChatMessageWorkflow.tasks.every((t) => t.type === 'SIMPLE')).toBe(true)
   })
 
-  it('loop starts with a WAIT task', () => {
-    const waitTask = agentChatWorkflow.tasks[0].loopOver![0]
-    expect(waitTask.type).toBe('WAIT')
-    expect(waitTask.name).toBe('agent_wait_for_message')
+  it('every task has a corresponding task definition', () => {
+    const defNames = agentChatTaskDefs.map((d) => d.name)
+    for (const task of agentChatMessageWorkflow.tasks) {
+      expect(defNames).toContain(task.name)
+    }
+  })
+
+  it('passes text from workflow input (not WAIT output)', () => {
+    const invokeTask = agentChatMessageWorkflow.tasks.find((t) => t.name === 'agent_invoke_claude')!
+    expect(invokeTask.inputParameters?.text).toBe('${workflow.input.text}')
   })
 })

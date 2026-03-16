@@ -61,7 +61,7 @@ export const typeDefs = `
 
   type AgentsSendMessageResult {
     userMessage: AgentsMessage!
-    workflowId: String!
+    workflowId: String
   }
 
   input AgentsStreamChunkInput {

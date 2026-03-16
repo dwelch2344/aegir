@@ -3,7 +3,7 @@ import Fastify from 'fastify'
 import { getWorkflow, registerTaskDefs, registerWorkflow, signalWaitTask, startWorkflow } from './conductor.js'
 import {
   agentChatTaskDefs,
-  agentChatWorkflow,
+  agentChatMessageWorkflow,
   onboardingWorkflow,
   projectApplyPatternTaskDefs,
   projectApplyPatternWorkflow,
@@ -116,9 +116,9 @@ export async function buildApp() {
     return { workflowId }
   })
 
-  // Agent chat — start a persistent conversation workflow
-  fastify.post<{ Body: { conversationId: string; projectId?: string } }>('/agents/chat/start', async (req) => {
-    const { conversationId, projectId } = req.body
+  // Agent chat — start a per-message workflow
+  fastify.post<{ Body: { conversationId: string; text: string; projectId?: string } }>('/agents/chat/start', async (req) => {
+    const { conversationId, text, projectId } = req.body
 
     // If projectId is provided, resolve localPath from the projects service
     let localPath: string | null = null
@@ -141,31 +141,13 @@ export async function buildApp() {
       }
     }
 
-    const workflowId = await startWorkflow('agent_chat_conversation', {
+    const workflowId = await startWorkflow('agent_chat_message', {
       conversationId,
+      text,
       projectId: projectId ?? null,
       localPath,
     })
     return { workflowId }
-  })
-
-  // Send a message into an existing conversation workflow (signals the WAIT task)
-  fastify.post<{ Body: { workflowId: string; text: string } }>('/agents/chat/message', async (req) => {
-    const { workflowId, text } = req.body
-    await signalWaitTask(workflowId, 'agent_wait_for_message_ref', {
-      text,
-      action: 'continue',
-    })
-    return { ok: true }
-  })
-
-  // Close a conversation workflow
-  fastify.post<{ Body: { workflowId: string } }>('/agents/chat/close', async (req) => {
-    const { workflowId } = req.body
-    await signalWaitTask(workflowId, 'agent_wait_for_message_ref', {
-      action: 'close',
-    })
-    return { ok: true }
   })
 
   // Project scaffold — create a new repo, clone, init manifest, store metadata
@@ -315,7 +297,7 @@ async function registerWithRetry(maxAttempts = 20, delayMs = 3000) {
       const allWorkflows = [
         onboardingWorkflow,
         selectHealthAcaWorkflow,
-        agentChatWorkflow,
+        agentChatMessageWorkflow,
         projectSyncWorkflow,
         projectCheckStatusWorkflow,
         projectApplyPatternWorkflow,
