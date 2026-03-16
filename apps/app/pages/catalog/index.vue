@@ -54,8 +54,8 @@ onMounted(fetchCatalog)
           <div class="flex-1 min-w-0">
             <div class="flex items-center gap-2 mb-1">
               <span class="text-sm font-medium text-gray-100">{{ entry.name }}</span>
-              <span class="text-xs px-1.5 py-0.5 rounded" :class="categoryColor(entry.id)">
-                {{ entry.id }}
+              <span class="text-xs px-1.5 py-0.5 rounded" :class="categoryColor(entry.patternId)">
+                {{ entry.patternId }}
               </span>
               <span class="text-xs text-gray-600">v{{ entry.version }}</span>
             </div>
@@ -129,15 +129,15 @@ onMounted(fetchCatalog)
           </div>
 
           <!-- Application instructions -->
-          <div v-if="entry.application_instructions">
+          <div v-if="entry.applicationInstructions">
             <h3 class="text-xs font-medium text-gray-500 uppercase mb-1">Application Instructions</h3>
-            <pre class="text-xs text-gray-300 whitespace-pre-wrap bg-gray-900 rounded p-3 border border-gray-700">{{ entry.application_instructions }}</pre>
+            <pre class="text-xs text-gray-300 whitespace-pre-wrap bg-gray-900 rounded p-3 border border-gray-700">{{ entry.applicationInstructions }}</pre>
           </div>
 
           <!-- Test criteria -->
-          <div v-if="entry.test_criteria">
+          <div v-if="entry.testCriteria">
             <h3 class="text-xs font-medium text-gray-500 uppercase mb-1">Test Criteria</h3>
-            <pre class="text-xs text-gray-300 whitespace-pre-wrap bg-gray-900 rounded p-3 border border-gray-700">{{ entry.test_criteria }}</pre>
+            <pre class="text-xs text-gray-300 whitespace-pre-wrap bg-gray-900 rounded p-3 border border-gray-700">{{ entry.testCriteria }}</pre>
           </div>
         </div>
       </div>

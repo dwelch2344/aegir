@@ -40,7 +40,7 @@ const patternRows = computed(() => {
   if (!project.value) return []
   const applied = project.value.patterns || []
   return catalog.value.map((entry: any) => {
-    const match = applied.find((p: any) => p.patternId === entry.id)
+    const match = applied.find((p: any) => p.patternId === entry.patternId)
     return {
       ...entry,
       applied: !!match,

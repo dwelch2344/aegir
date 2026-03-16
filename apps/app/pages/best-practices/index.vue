@@ -131,7 +131,7 @@ onMounted(fetchRegistry)
         >
           <button
             class="w-full text-left px-5 py-4 hover:bg-gray-750 transition-colors flex items-start gap-4"
-            @click="toggleEntry(entry.path)"
+            @click="toggleEntry(entry.id)"
           >
             <div class="flex-1 min-w-0">
               <div class="flex items-center gap-2 mb-1">
@@ -140,9 +140,9 @@ onMounted(fetchRegistry)
                 </svg>
                 <span class="text-sm font-medium text-gray-200">{{ entry.title }}</span>
                 <span class="text-xs px-1.5 py-0.5 rounded" :class="categoryBadgeColor(currentCategory.color)">
-                  {{ entry.id }}
+                  {{ entry.entryId }}
                 </span>
-                <span v-if="saveSuccess === entry.path" class="text-xs text-emerald-400">Saved</span>
+                <span v-if="saveSuccess === entry.id" class="text-xs text-emerald-400">Saved</span>
               </div>
               <p class="text-sm text-gray-400">{{ entry.description }}</p>
             </div>
@@ -152,7 +152,7 @@ onMounted(fetchRegistry)
               </span>
               <svg
                 class="w-4 h-4 text-gray-500 shrink-0 transition-transform"
-                :class="{ 'rotate-180': expandedEntry === entry.path }"
+                :class="{ 'rotate-180': expandedEntry === entry.id }"
                 fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"
               >
                 <path stroke-linecap="round" stroke-linejoin="round" d="m19.5 8.25-7.5 7.5-7.5-7.5" />
@@ -161,8 +161,8 @@ onMounted(fetchRegistry)
           </button>
 
           <!-- Expanded content -->
-          <div v-if="expandedEntry === entry.path" class="border-t border-gray-700 px-5 py-4">
-            <template v-if="editingFile === entry.path">
+          <div v-if="expandedEntry === entry.id" class="border-t border-gray-700 px-5 py-4">
+            <template v-if="editingFile === entry.id">
               <textarea
                 v-model="editContent"
                 class="w-full h-80 bg-gray-900 text-gray-200 text-xs font-mono rounded-lg p-3 border border-gray-700 resize-y outline-none focus:border-emerald-600"
@@ -171,7 +171,7 @@ onMounted(fetchRegistry)
                 <button
                   class="px-3 py-1.5 rounded text-sm bg-emerald-600 hover:bg-emerald-500 text-white transition-colors disabled:opacity-50"
                   :disabled="saving"
-                  @click="handleSave(entry.path)"
+                  @click="handleSave(entry.id)"
                 >
                   {{ saving ? 'Saving...' : 'Save' }}
                 </button>
@@ -188,7 +188,7 @@ onMounted(fetchRegistry)
                 <span class="text-xs font-medium text-gray-500 uppercase">Content</span>
                 <button
                   class="text-xs px-2.5 py-1 rounded bg-gray-700 text-gray-400 hover:text-gray-200 hover:bg-gray-600 transition-colors"
-                  @click="startEdit(entry.path, entry.content)"
+                  @click="startEdit(entry.id, entry.content)"
                 >
                   Edit
                 </button>

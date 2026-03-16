@@ -20,3 +20,7 @@ ALTER USER conductor WITH REPLICATION;
 -- Create agents service user for the agents service
 CREATE USER agents_svc WITH ENCRYPTED PASSWORD 'agents_dev';
 GRANT ALL PRIVILEGES ON DATABASE aegir TO agents_svc;
+
+-- Create practices schema for the practices service (context, BCP, catalog)
+-- The practices service uses the main aegir database with its own schema,
+-- created automatically by Moribashi pgPlugin migrations.
