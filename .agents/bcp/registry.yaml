@@ -1,4 +1,4 @@
-# Best Current Practices (BCP) Registry — v0.1.0
+# Best Current Practices (BCP) Registry — v0.2.0
 #
 # This file indexes all Best Current Practice documents available to AI agents
 # and developers. BCPs capture general architectural knowledge, design patterns,
@@ -14,7 +14,7 @@
 #   - IDs use dot notation: category.topic (e.g., architecture.service-boundaries)
 #   - Files live under their category folder
 
-version: "0.1.0"
+version: "0.2.0"
 
 categories:
   - id: architecture
@@ -54,7 +54,31 @@ categories:
     description: >
       Testing strategies, test architecture, coverage guidelines, and
       quality assurance patterns.
-    entries: []
+    entries:
+      - id: testing.unit-boundaries
+        title: Unit Test Boundaries
+        description: >
+          Defining what constitutes a "unit" in domain service testing.
+          Real databases, mock at service boundaries, test through GraphQL.
+        path: testing/unit-boundaries.md
+      - id: testing.contract
+        title: Consumer-Driven Contract Testing
+        description: >
+          Contract testing for cross-service safety in federated GraphQL
+          and event-driven architectures.
+        path: testing/contract-testing.md
+      - id: testing.integration-layers
+        title: Integration Test Layers
+        description: >
+          Four integration layers (in-process, database, cross-service,
+          event-driven) and when to use each.
+        path: testing/integration-layers.md
+      - id: testing.adversarial
+        title: Adversarial QA Testing
+        description: >
+          Systematic adversarial testing methodology — seed invariants,
+          mutation attacks, cross-entity checks, finding documentation.
+        path: testing/adversarial-qa.md
 
   - id: infrastructure
     label: Infrastructure

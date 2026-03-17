@@ -27,6 +27,10 @@ services:
     type: graphql-subgraph
     port: 4003
     schema: agents
+  - name: practices
+    type: graphql-subgraph
+    port: 4005
+    schema: practices
   - name: orchestration
     type: worker
     port: 4010
@@ -60,6 +64,12 @@ catalog_refs:
     version: 0.1.0
   - id: infra.aws-eks-gitops
     version: 0.1.0
+  - id: service.domain-subgraph
+    version: 0.1.0
+  - id: testing.contract-driven
+    version: 0.1.0
+  - id: testing.domain-service
+    version: 0.1.0
 
 capabilities:
   - graphql-federation
@@ -72,6 +82,9 @@ capabilities:
   - email
   - frontend-spa
   - ai-conversation
+  - practices-management
+  - testing.contract-infrastructure
+  - testing.domain-service-suite
 
 constraints:
   protected_paths:

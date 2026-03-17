@@ -1,0 +1,217 @@
+id: testing.contract-driven
+version: "0.1.0"
+name: Consumer-Driven Contract Testing
+description: >
+  Adds consumer-driven contract testing infrastructure to a ship. In a federated
+  GraphQL architecture, each subgraph is a potential breaking point for consumers.
+  This pattern establishes a contract test structure where consuming services
+  define the schema and behavioral contracts they depend on, and provider services
+  validate those contracts in their CI pipeline. Covers both GraphQL federation
+  contracts (schema shape, entity resolution) and event contracts (Kafka message
+  schemas). Includes a shared contract test runner, CI integration, and manifest
+  tracking of contract relationships.
+
+preconditions:
+  - api.graphql-federation
+
+provides:
+  - testing.contract-infrastructure
+  - testing.schema-contracts
+  - testing.event-contracts
+
+parameters:
+  consumer_service:
+    type: string
+    required: true
+    description: >
+      The service that consumes types from other subgraphs. This is where
+      contract definitions are co-located. Example: "agents", "practices".
+  provider_services:
+    type: string
+    required: true
+    description: >
+      Comma-separated list of provider subgraph names that the consumer depends
+      on. Example: "iam,system". Contracts will be generated for each.
+  include_event_contracts:
+    type: boolean
+    required: false
+    default: false
+    description: >
+      Whether to include Kafka event contract testing infrastructure. Set to
+      true if the service consumes or produces Kafka messages.
+
+application_instructions: |
+  ## 1. Create the contracts directory
+
+  In the consuming service, create a `__contracts__/` directory:
+
+  ```
+  services/<consumer_service>/src/__contracts__/
+  ```
+
+  This directory holds contract test files — one per provider service.
+
+  ## 2. Write schema contract tests
+
+  For each provider service, create a contract test file:
+
+  ```typescript
+  // services/<consumer_service>/src/__contracts__/<provider>.contract.ts
+  import { describe, expect, it } from 'vitest'
+  import type { FastifyInstance } from 'fastify'
+
+  /**
+   * Contract: <consumer_service> depends on <provider> subgraph.
+   *
+   * These tests verify that the provider's schema contains the types and
+   * fields that this service references via federation. Run these tests
+   * in the PROVIDER's CI, not the consumer's.
+   */
+  export function define<Provider>Contract(fastify: FastifyInstance) {
+    describe('Schema Contract: <provider> subgraph', () => {
+      it('exposes <Type> with federation key', async () => {
+        const response = await fastify.inject({
+          method: 'POST',
+          url: '/graphql',
+          payload: { query: '{ _service { sdl } }' },
+        })
+        const sdl = response.json().data._service.sdl
+        expect(sdl).toContain('type <Type> @key(fields: "id")')
+      })
+
+      it('exposes required fields on <Type>', async () => {
+        const response = await fastify.inject({
+          method: 'POST',
+          url: '/graphql',
+          payload: { query: '{ _service { sdl } }' },
+        })
+        const sdl = response.json().data._service.sdl
+        // List every field this consumer depends on
+        expect(sdl).toContain('id: Int!')
+        // ... additional fields
+      })
+    })
+  }
+  ```
+
+  ## 3. Write behavioral contract tests
+
+  Extend the contract file with behavioral assertions:
+
+  ```typescript
+  export function define<Provider>BehavioralContract(fastify: FastifyInstance) {
+    describe('Behavioral Contract: <provider>', () => {
+      it('search with empty input returns results', async () => {
+        const response = await fastify.inject({
+          method: 'POST',
+          url: '/graphql',
+          payload: {
+            query: '{ <provider> { <entities> { search(input: {}) { results { id } } } } }',
+          },
+        })
+        expect(response.json().data.<provider>.<entities>.search.results.length)
+          .toBeGreaterThan(0)
+      })
+    })
+  }
+  ```
+
+  ## 4. Register contracts in the provider's test suite
+
+  In the provider service's test file (e.g., `app.test.ts`), import and run
+  consumer contracts:
+
+  ```typescript
+  // At the end of services/<provider>/src/app.test.ts
+  import { define<Consumer>Contract } from '../../<consumer_service>/src/__contracts__/<provider>.contract.js'
+
+  // Run consumer contracts against this provider
+  define<Consumer>Contract(fastify)
+  ```
+
+  ## 5. Add event contract tests (if include_event_contracts)
+
+  Create event schema validation tests:
+
+  ```typescript
+  // services/<consumer_service>/src/__contracts__/events.contract.ts
+  import { describe, expect, it } from 'vitest'
+  import { z } from 'zod'
+
+  // Define the event shapes this service depends on
+  const ChatStreamChunkSchema = z.object({
+    type: z.literal('chat.stream.chunk'),
+    conversationId: z.string(),
+    text: z.string(),
+    done: z.boolean(),
+    timestamp: z.string(),
+  })
+
+  describe('Event Contract: agents.chat.events', () => {
+    it('ChatStreamChunkEvent matches expected schema', () => {
+      const event = {
+        type: 'chat.stream.chunk',
+        conversationId: 'test-conv',
+        text: 'hello',
+        done: false,
+        timestamp: new Date().toISOString(),
+      }
+      expect(() => ChatStreamChunkSchema.parse(event)).not.toThrow()
+    })
+  })
+  ```
+
+  ## 6. Update the ship manifest
+
+  Add contract relationships to `shipyard.manifest`:
+
+  ```yaml
+  contracts:
+    provides:
+      - type: graphql
+        subgraph: <consumer_service>
+        types: [...]
+    consumes:
+      - type: graphql
+        subgraph: <provider>
+        types: [...]
+        contract_file: src/__contracts__/<provider>.contract.ts
+  ```
+
+  ## 7. Add CI contract validation
+
+  Add a CI step that runs consumer contracts against providers:
+
+  ```yaml
+  contract-tests:
+    steps:
+      - pnpm --filter @<scope>/<provider> test -- --grep "Contract"
+  ```
+
+test_criteria:
+  - description: Contract test directory exists in consumer service
+    command: "test -d services/<consumer_service>/src/__contracts__"
+  - description: Contract test files exist for each provider
+    command: "ls services/<consumer_service>/src/__contracts__/*.contract.ts"
+  - description: Schema contract tests pass
+    command: "pnpm --filter @<scope>/<consumer_service> test -- --grep 'Schema Contract'"
+  - description: Provider tests include consumer contracts
+    command: "grep -l 'Contract' services/<provider>/src/app.test.ts"
+  - description: Manifest includes contract declarations
+    command: "grep -q 'contracts' shipyard.manifest"
+
+security_notes: |
+  - **Contract tests must not bypass authentication.** If the provider service
+    requires authentication, contract tests should use test credentials, not
+    skip auth middleware.
+  - **Event contracts should validate sensitive field presence.** Ensure events
+    do not leak PII, credentials, or internal IDs that consumers should not see.
+  - **Contract test data must be isolated.** Use dedicated test organizations or
+    namespaced data to prevent contract tests from interfering with other tests
+    or production data.
+
+touchpoints:
+  - "services/<consumer_service>/src/__contracts__/"
+  - "services/<provider>/src/app.test.ts"
+  - "shipyard.manifest"
+  - ".github/workflows/ci.yml"

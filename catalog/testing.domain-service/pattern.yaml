@@ -1,0 +1,241 @@
+id: testing.domain-service
+version: "0.1.0"
+name: Domain Service Test Suite
+description: >
+  Bootstraps the standard test structure for a domain service: core integration
+  tests (app.test.ts), seed invariant tests, adversarial mutation tests, and
+  cross-entity invariant tests. Follows the established Shipyard testing patterns
+  with real database, in-process HTTP via fastify.inject(), black-box behavioral
+  assertions, and the __qa__/ directory convention for adversarial probing. This
+  pattern generates tests that are immediately runnable against seeded data and
+  cover health checks, federation schema, CRUD operations, upsert idempotency,
+  and input edge cases.
+
+preconditions:
+  - service.domain-subgraph
+  - db.postgres-isolated
+
+provides:
+  - testing.domain-service-suite
+  - testing.seed-invariants
+  - testing.adversarial-mutations
+  - testing.cross-entity-invariants
+
+parameters:
+  service_name:
+    type: string
+    required: true
+    description: >
+      The service name (lowercase). Must match the directory name under
+      services/ and the service identifier in health check responses.
+      Example: "practices", "billing", "inventory".
+  namespace:
+    type: string
+    required: true
+    description: >
+      The GraphQL namespace prefix (PascalCase). Used in query paths.
+      Example: "Practices", "Billing", "Inventory".
+  entities:
+    type: string
+    required: true
+    description: >
+      Comma-separated list of entity names (PascalCase) that the service
+      manages. Tests will be generated for each entity's CRUD operations.
+      Example: "ContextFile,BcpCategory,BcpEntry,CatalogEntry".
+  seed_counts:
+    type: string
+    required: false
+    default: ""
+    description: >
+      Comma-separated entity:count pairs describing expected seed data counts.
+      Used to generate seed invariant tests. Example: "ContextFile:5,BcpCategory:6".
+
+application_instructions: |
+  ## 1. Create the core test file
+
+  Create `services/<service_name>/src/app.test.ts`:
+
+  ```typescript
+  import type { FastifyInstance } from 'fastify'
+  import { afterAll, beforeAll, describe, expect, it } from 'vitest'
+  import { buildApp } from './app.js'
+
+  describe('<ServiceName> Service', () => {
+    let fastify: FastifyInstance
+    let stop: () => Promise<void>
+
+    beforeAll(async () => {
+      const result = await buildApp()
+      fastify = result.fastify
+      stop = () => result.app.stop()
+      await fastify.ready()
+    })
+
+    afterAll(async () => {
+      await stop()
+    })
+
+    // --- Infrastructure ---
+
+    it('responds to health check', async () => {
+      const response = await fastify.inject({ method: 'GET', url: '/health' })
+      expect(response.statusCode).toBe(200)
+      expect(response.json()).toEqual({ status: 'ok', service: '<service_name>' })
+    })
+
+    it('serves the federated schema', async () => {
+      const response = await fastify.inject({
+        method: 'POST',
+        url: '/graphql',
+        payload: { query: '{ _service { sdl } }' },
+      })
+      expect(response.statusCode).toBe(200)
+      const sdl = response.json().data._service.sdl
+      expect(sdl).toContain('type <Namespace>')
+      // Assert each entity type appears in the schema
+    })
+
+    // --- Query Tests ---
+
+    it('returns all <entities> when no filters', async () => {
+      const response = await fastify.inject({
+        method: 'POST',
+        url: '/graphql',
+        payload: {
+          query: '{ <namespace> { <entities> { search(input: {}) { results { id } } } } }',
+        },
+      })
+      expect(response.statusCode).toBe(200)
+      const results = response.json().data.<namespace>.<entities>.search.results
+      expect(results.length).toBeGreaterThan(0)
+    })
+
+    // --- Mutation Tests ---
+
+    it('upsert creates a new record', async () => {
+      // Create via mutation, verify in response
+    })
+
+    it('upsert is idempotent (same input twice = same result)', async () => {
+      // Run same upsert twice, verify same ID returned
+    })
+
+    // --- Edge Cases ---
+
+    it('search with no matching results returns empty array', async () => {
+      // Query with non-existent ID
+    })
+  })
+  ```
+
+  ## 2. Create the __qa__/ directory
+
+  ```
+  services/<service_name>/src/__qa__/
+  ```
+
+  ## 3. Create seed invariant tests
+
+  Create `services/<service_name>/src/__qa__/seed-invariants.test.ts`:
+
+  ```typescript
+  import type { FastifyInstance } from 'fastify'
+  import { afterAll, beforeAll, describe, expect, it } from 'vitest'
+  import { buildApp } from '../app.js'
+
+  describe('Seed Invariants — Adversarial QA', () => {
+    let fastify: FastifyInstance
+    let stop: () => Promise<void>
+
+    beforeAll(async () => {
+      const result = await buildApp()
+      fastify = result.fastify
+      stop = () => result.app.stop()
+      await fastify.ready()
+    })
+
+    afterAll(async () => {
+      await stop()
+    })
+
+    // For each entity with seed data:
+    it('has exactly N <entity> records seeded', async () => {
+      // Query and assert exact count
+    })
+
+    it('all seeded records have valid required fields', async () => {
+      // Query all, check non-null, non-empty where required
+    })
+
+    it('seed data is idempotent', async () => {
+      // Re-run seed, verify counts unchanged
+    })
+  })
+  ```
+
+  ## 4. Create adversarial mutation tests
+
+  Create `services/<service_name>/src/__qa__/mutation-attacks.test.ts`:
+
+  ```typescript
+  describe('Mutation Attacks — Adversarial QA', () => {
+    // Extreme string inputs
+    // SQL injection attempts
+    // Special characters
+    // Boundary numeric values
+    // Empty/null field probing
+  })
+  ```
+
+  ## 5. Create cross-entity invariant tests
+
+  Create `services/<service_name>/src/__qa__/cross-entity-invariants.test.ts`:
+
+  ```typescript
+  describe('Cross-Entity Invariants — Adversarial QA', () => {
+    // FK integrity checks
+    // Cascade delete verification
+    // Orphan record detection
+  })
+  ```
+
+  ## 6. Verify all tests pass
+
+  ```bash
+  pnpm --filter @<scope>/<service_name> test
+  ```
+
+test_criteria:
+  - description: Core test file exists
+    command: "test -f services/<service_name>/src/app.test.ts"
+  - description: QA directory exists
+    command: "test -d services/<service_name>/src/__qa__"
+  - description: Seed invariant tests exist
+    command: "test -f services/<service_name>/src/__qa__/seed-invariants.test.ts"
+  - description: Adversarial tests exist
+    command: "test -f services/<service_name>/src/__qa__/mutation-attacks.test.ts"
+  - description: All tests pass
+    command: "pnpm --filter @<scope>/<service_name> test"
+  - description: Health check test present
+    command: "grep -q 'health' services/<service_name>/src/app.test.ts"
+  - description: Federation schema test present
+    command: "grep -q '_service.*sdl' services/<service_name>/src/app.test.ts"
+  - description: Idempotency test present
+    command: "grep -q 'idempotent' services/<service_name>/src/app.test.ts"
+
+security_notes: |
+  - **Adversarial tests must include SQL injection probing.** Every string input
+    field in every mutation must be tested with SQL injection payloads. Use
+    parameterized queries throughout — these tests verify the parameterization.
+  - **XSS payload testing.** If any field's content is rendered in a frontend,
+    test with `<script>` tags and HTML entities to verify escaping.
+  - **Test data isolation.** Adversarial tests must use unique identifiers
+    (timestamp-suffixed keys) to avoid interfering with seed data or other tests.
+  - **Never test auth bypass.** Adversarial tests probe input handling, not auth.
+    Auth testing belongs in a separate security test suite.
+
+touchpoints:
+  - "services/<service_name>/src/app.test.ts"
+  - "services/<service_name>/src/__qa__/seed-invariants.test.ts"
+  - "services/<service_name>/src/__qa__/mutation-attacks.test.ts"
+  - "services/<service_name>/src/__qa__/cross-entity-invariants.test.ts"
