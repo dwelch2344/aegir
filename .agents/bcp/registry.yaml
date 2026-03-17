@@ -79,6 +79,18 @@ categories:
           Systematic adversarial testing methodology — seed invariants,
           mutation attacks, cross-entity checks, finding documentation.
         path: testing/adversarial-qa.md
+      - id: testing.test-data-strategy
+        title: Test Data Strategy
+        description: >
+          Managing test data across domain services — seed data, factory
+          functions, fixtures, data isolation, and cross-service test data.
+        path: testing/test-data-strategy.md
+      - id: testing.ci-pipeline
+        title: CI Test Pipeline
+        description: >
+          Mapping the four integration test layers to CI/CD pipeline stages —
+          PR checks, merge gate, and nightly integration.
+        path: testing/ci-pipeline.md
 
   - id: infrastructure
     label: Infrastructure

@@ -1,0 +1,172 @@
+id: testing.ci-pipeline
+version: "0.1.0"
+name: CI Test Pipeline
+description: >
+  Configures a multi-stage CI/CD test pipeline that maps the four integration
+  test layers to appropriate CI stages. Stage 1 (PR checks) runs in-process
+  and database tests for fast feedback. Stage 2 (merge gate) adds cross-service
+  federation and contract tests. Stage 3 (nightly) runs full event-driven
+  integration tests. Uses Turborepo for incremental test execution in monorepo
+  setups and supports test filtering via describe-block naming conventions.
+
+preconditions:
+  - build.pnpm-turbo
+  - testing.domain-service
+
+provides:
+  - testing.ci-pipeline
+  - testing.pr-checks
+  - testing.merge-gate
+  - testing.nightly-integration
+
+parameters:
+  ci_platform:
+    type: string
+    required: true
+    description: >
+      The CI platform to generate configuration for. Example: "github-actions",
+      "gitlab-ci", "circleci".
+  services:
+    type: string
+    required: true
+    description: >
+      Comma-separated list of subgraph service names. Used to configure
+      Stage 2 (merge gate) service startup. Example: "iam,system,agents,practices".
+  include_event_tests:
+    type: boolean
+    required: false
+    default: false
+    description: >
+      Whether to include Stage 3 (nightly) event-driven test configuration.
+      Set to true if the ship uses Kafka/Redpanda event streaming.
+
+application_instructions: |
+  ## 1. Configure Turborepo test pipeline
+
+  Ensure `turbo.json` has a `test` task with proper inputs:
+
+  ```json
+  {
+    "pipeline": {
+      "test": {
+        "dependsOn": ["^build"],
+        "inputs": ["src/**/*.ts", "src/**/*.test.ts", "data/migrations/**"],
+        "outputs": []
+      }
+    }
+  }
+  ```
+
+  ## 2. Add test naming conventions
+
+  Ensure all test files use filterable describe-block names:
+
+  - Core tests: `describe('<ServiceName> Service', ...)`
+  - Seed invariants: `describe('Seed Invariants — Adversarial QA', ...)`
+  - Mutation attacks: `describe('Mutation Attacks — Adversarial QA', ...)`
+  - Contract tests: `describe('Schema Contract: <provider>', ...)`
+  - Federation tests: `describe('Federation: <description>', ...)`
+
+  ## 3. Create Stage 1 CI configuration (PR checks)
+
+  ```yaml
+  # .github/workflows/pr-tests.yml (for GitHub Actions)
+  name: PR Tests
+  on: [pull_request]
+  jobs:
+    test:
+      runs-on: ubuntu-latest
+      services:
+        postgres:
+          image: postgres:16
+          env:
+            POSTGRES_PASSWORD: test
+          ports: ['5432:5432']
+      steps:
+        - uses: actions/checkout@v4
+        - uses: pnpm/action-setup@v4
+        - run: pnpm install --frozen-lockfile
+        - run: pnpm test
+  ```
+
+  ## 4. Create Stage 2 CI configuration (merge gate)
+
+  ```yaml
+  # .github/workflows/merge-tests.yml
+  name: Merge Gate
+  on:
+    push:
+      branches: [main]
+  jobs:
+    federation:
+      runs-on: ubuntu-latest
+      steps:
+        - uses: actions/checkout@v4
+        - uses: pnpm/action-setup@v4
+        - run: pnpm install --frozen-lockfile
+        - run: docker compose up -d postgres <services> gateway
+        - run: pnpm --filter gateway test -- --grep "Contract"
+        - run: pnpm --filter gateway test -- --grep "Federation"
+  ```
+
+  ## 5. Create Stage 3 CI configuration (nightly, if include_event_tests)
+
+  ```yaml
+  # .github/workflows/nightly-tests.yml
+  name: Nightly Integration
+  on:
+    schedule:
+      - cron: '0 3 * * *'
+  jobs:
+    full-integration:
+      runs-on: ubuntu-latest
+      steps:
+        - uses: actions/checkout@v4
+        - run: docker compose up -d
+        - run: pnpm test
+        - run: pnpm test:events
+        - run: pnpm test:workflows
+  ```
+
+  ## 6. Update package.json scripts
+
+  Add filtered test scripts to root `package.json`:
+
+  ```json
+  {
+    "scripts": {
+      "test": "turbo run test",
+      "test:federation": "pnpm --filter gateway test -- --grep 'Federation'",
+      "test:contracts": "pnpm --filter gateway test -- --grep 'Contract'",
+      "test:events": "pnpm --filter orchestration test -- --grep 'Event'",
+      "test:workflows": "pnpm --filter orchestration test -- --grep 'Workflow'"
+    }
+  }
+  ```
+
+test_criteria:
+  - description: Turborepo test pipeline configured
+    command: "grep -q 'test' turbo.json"
+  - description: PR test CI workflow exists
+    command: "test -f .github/workflows/pr-tests.yml"
+  - description: Merge gate CI workflow exists
+    command: "test -f .github/workflows/merge-tests.yml"
+  - description: All Layer 1+2 tests pass
+    command: "pnpm test"
+  - description: Test scripts include filtered runners
+    command: "grep -q 'test:federation' package.json"
+
+security_notes: |
+  - **CI credentials must use short-lived tokens.** Never store long-lived database
+    passwords or API keys in CI configuration. Use GitHub Secrets or equivalent.
+  - **Test databases must be ephemeral.** CI postgres instances are created per-run
+    and destroyed after. Never connect CI tests to shared or production databases.
+  - **Nightly test results should be reviewed.** Unreviewed nightly failures lead to
+    accumulated security regressions. Route failures to a monitored channel.
+
+touchpoints:
+  - "turbo.json"
+  - ".github/workflows/pr-tests.yml"
+  - ".github/workflows/merge-tests.yml"
+  - ".github/workflows/nightly-tests.yml"
+  - "package.json"

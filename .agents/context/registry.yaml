@@ -146,4 +146,11 @@ tiers:
             - coverage
             - qa
             - adversarial
-          catalog_refs: []
+            - contract
+            - seed
+            - ci
+            - pipeline
+          catalog_refs:
+            - testing.domain-service
+            - testing.contract-driven
+            - testing.ci-pipeline

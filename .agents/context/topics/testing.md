@@ -65,6 +65,33 @@ See BCP: `testing.integration-layers` for the full guide.
 - Organized in `__qa__/` directory: seed-invariants, mutation-attacks, cross-entity-invariants
 - See BCP: `testing.adversarial` for the full methodology.
 
+## Test Data Strategy
+
+- **Seed data** (Tier 1): Shared foundation, loaded once, read-only during tests. Assert exact
+  counts in `__qa__/seed-invariants.test.ts`.
+- **Factory functions** (Tier 2): Per-test data creation with timestamp-suffixed keys.
+  Clean up after assertions. Used for mutation tests and edge cases.
+- **Fixtures** (Tier 3): Multi-entity scenarios. Return a cleanup function.
+  Used in `beforeAll` for complex test setups.
+- Unique keys prevent ordering dependencies. Never share mutable state between tests.
+- Cross-service test data uses shared IAM seed set (3 identities, 2 orgs).
+- See BCP: `testing.test-data-strategy` for the full pattern.
+
+## CI Pipeline Integration
+
+Three CI stages aligned with integration layers:
+
+1. **PR Checks** (every push): Layer 1 + 2 tests. Postgres only. < 2 min.
+2. **Merge Gate** (merge to main): + Layer 3 + contracts. All services. < 5 min.
+3. **Nightly** (scheduled): + Layer 4 event-driven tests. Full stack. < 15 min.
+
+Use consistent `describe` prefixes for CI filtering:
+- `"Schema Contract: <provider>"` — contract tests
+- `"Seed Invariants — Adversarial QA"` — seed invariant tests
+- `"Federation: <description>"` — federation tests
+
+See BCP: `testing.ci-pipeline` for the full stage configuration.
+
 ## Anti-Patterns to Avoid
 
 - Mocking the database (diverges from production behavior)
@@ -73,3 +100,6 @@ See BCP: `testing.integration-layers` for the full guide.
 - Ignoring test performance — slow tests get skipped
 - Provider-only schema testing (doesn't know what consumers use)
 - Snapshot-based schema tests (brittle, additive changes shouldn't fail)
+- SQL dump seeds (use code-based idempotent seeds instead)
+- Running Layer 3+ tests on every PR (too slow, save for merge gate)
+- Skipping nightly test failures (triage within 24h)

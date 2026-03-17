@@ -70,6 +70,36 @@ catalog_refs:
     version: 0.1.0
   - id: testing.domain-service
     version: 0.1.0
+  - id: testing.ci-pipeline
+    version: 0.1.0
+
+contracts:
+  - consumer: agents
+    providers: [iam, system]
+    surface:
+      - type: graphql
+        provider: iam
+        types: [Identity, Organization]
+        contract_file: src/__contracts__/iam.contract.ts
+      - type: graphql
+        provider: system
+        types: [Tenant]
+        contract_file: src/__contracts__/system.contract.ts
+  - consumer: gateway
+    providers: [iam, system, agents, practices]
+    surface:
+      - type: graphql-composition
+        description: Federation schema composition across all subgraphs
+
+test_suites:
+  - service: iam
+    suites: [core, seed-invariants, adversarial, cross-entity]
+  - service: system
+    suites: [core, seed-invariants, adversarial, cross-entity]
+  - service: agents
+    suites: [core, seed-invariants, adversarial, cross-entity, contracts]
+  - service: practices
+    suites: [core, seed-invariants, adversarial, cross-entity]
 
 capabilities:
   - graphql-federation
@@ -85,6 +115,7 @@ capabilities:
   - practices-management
   - testing.contract-infrastructure
   - testing.domain-service-suite
+  - testing.ci-pipeline
 
 constraints:
   protected_paths:

@@ -81,6 +81,22 @@ services/<service>/src/
 | Agents | 10 | 4 | 10 | — | 24 |
 | Practices | TBD | TBD | TBD | — | TBD |
 
+## Test Data Strategy
+
+- **Seeds**: Loaded via `seedFromDisk()` from `.agents/` registries and `catalog/` patterns
+- **Factories**: Inline per-test with `Date.now()` keys, cleanup after assertions
+- **Fixtures**: Not yet needed — services are leaf-level with simple entity graphs
+- **Isolation**: Schema-per-service Postgres, unique keys for mutation tests
+- **Shared IAM seed**: 3 identities, 2 orgs — all services build on this
+
+## CI Pipeline Stages
+
+| Stage | Tests | Infrastructure | Target |
+|-------|-------|---------------|--------|
+| PR Checks | `pnpm test` (Layer 1+2) | Postgres | < 2 min |
+| Merge Gate | + contracts + federation | All services + gateway | < 5 min |
+| Nightly | + event + workflow tests | Full stack + Redpanda | < 15 min |
+
 ## QA Strategy Phases
 
 1. Catalog entry validation (Zod schemas)
