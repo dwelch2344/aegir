@@ -8,6 +8,7 @@ import type { TaskResult } from '../conductor.js'
 import { config } from '../config.js'
 import { publishChatEvent } from '../kafka-bridge.js'
 import type { ChatStreamChunkEvent, ChatResponseCompleteEvent, ChatErrorEvent } from '@aegir/kafka'
+import { ensureProjectWorkspace } from './project-ensure-cloned.js'
 
 interface StreamEvent {
   type: string
@@ -126,7 +127,7 @@ async function addTaskLog(taskId: string, log: string) {
 }
 
 export async function handleAgentInvokeClaude(task: any): Promise<TaskResult> {
-  const { text, messages, conversationId, localPath } = task.inputData ?? {}
+  const { text, messages, conversationId, projectId } = task.inputData ?? {}
   let promptFile: string | undefined
 
   try {
@@ -155,9 +156,26 @@ export async function handleAgentInvokeClaude(task: any): Promise<TaskResult> {
     const env = { ...process.env }
     delete env.CLAUDECODE
 
+    // Resolve project workspace if a project is associated with this conversation.
+    // ensureProjectWorkspace handles stale paths (container restart) by re-cloning.
+    let effectiveCwd: string | undefined
+    if (projectId) {
+      try {
+        const { localPath } = await ensureProjectWorkspace(projectId)
+        effectiveCwd = localPath
+      } catch {
+        // best effort — fall back to no cwd if project resolution fails
+      }
+    }
+
     // Throttle streaming updates — at most every 2s
     let lastStreamAt = 0
     const STREAM_INTERVAL = 2000
+
+    // Segment tracking — each tool use starts a new content segment
+    // so the frontend can render separate bubbles for text between tools.
+    let segmentIndex = 0
+    const segmentTexts: string[] = ['']
 
     const response = await runClaude(
       promptFile,
@@ -168,14 +186,18 @@ export async function handleAgentInvokeClaude(task: any): Promise<TaskResult> {
           if (now - lastStreamAt < STREAM_INTERVAL) return
           lastStreamAt = now
 
-          addTaskLog(task.taskId, `[streaming] ${accumulated.length} chars so far`)
+          // Derive current segment's text from the global accumulation
+          const priorLength = segmentTexts.slice(0, segmentIndex).reduce((s, t) => s + t.length, 0)
+          segmentTexts[segmentIndex] = accumulated.slice(priorLength)
+
+          addTaskLog(task.taskId, `[streaming] seg=${segmentIndex} ${accumulated.length} chars so far`)
 
           if (conversationId) {
-            // Publish stream chunk via Kafka
             const chunkEvent: ChatStreamChunkEvent = {
               type: 'chat.stream.chunk',
               conversationId,
-              text: accumulated,
+              text: segmentTexts[segmentIndex],
+              segmentIndex,
               done: false,
               timestamp: new Date().toISOString(),
             }
@@ -185,23 +207,31 @@ export async function handleAgentInvokeClaude(task: any): Promise<TaskResult> {
         onToolUse(toolName) {
           addTaskLog(task.taskId, `[tool] ${toolName}`)
 
-          // Stream tool activity to the chat so users see what Claude is doing
+          // Publish tool indicator (transient — frontend shows briefly)
           if (conversationId) {
             const toolChunk: ChatStreamChunkEvent = {
               type: 'chat.stream.chunk',
               conversationId,
               text: `Using tool: ${toolName}...`,
+              toolName,
+              segmentIndex,
               done: false,
               timestamp: new Date().toISOString(),
             }
             publishChatEvent(conversationId, toolChunk).catch(() => {})
           }
+
+          // Start a new content segment
+          segmentIndex++
+          segmentTexts.push('')
         },
       },
-      localPath || undefined,
+      effectiveCwd,
     )
 
-    const trimmed = response.trim()
+    // Build final response with visual breaks between segments
+    const finalSegments = segmentTexts.filter((s) => s.trim())
+    const trimmed = (finalSegments.length > 1 ? finalSegments.join('\n\n---\n\n') : response).trim()
 
     // Publish completion event via Kafka
     if (conversationId) {

@@ -16,6 +16,7 @@ import { handleProjectCreateRepo } from './workers/project-create-repo.js'
 import { handleProjectInitManifest } from './workers/project-init-manifest.js'
 import { handleProjectCheckStatus } from './workers/project-check-status.js'
 import { handleProjectClone } from './workers/project-clone.js'
+import { handleEnsureProjectCloned } from './workers/project-ensure-cloned.js'
 import { handleProjectCommitPush } from './workers/project-commit-push.js'
 import { handleProjectRunDiagnostics } from './workers/project-run-diagnostics.js'
 import { handleProjectParseManifest } from './workers/project-parse-manifest.js'
@@ -40,6 +41,7 @@ const handlers: Record<string, TaskHandler> = {
   agent_gather_context: handleAgentGatherContext,
   agent_invoke_claude: handleAgentInvokeClaude,
   agent_deliver_response: handleAgentDeliverResponse,
+  ensure_project_cloned: handleEnsureProjectCloned,
   project_clone: handleProjectClone,
   project_parse_manifest: handleProjectParseManifest,
   project_store_metadata: handleProjectStoreMetadata,

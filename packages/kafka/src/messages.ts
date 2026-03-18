@@ -26,6 +26,10 @@ export interface ChatStreamChunkEvent {
   /** true when this is the final chunk */
   done: boolean
   timestamp: string
+  /** Content segment index (0-based). Increments after each tool use. */
+  segmentIndex?: number
+  /** When set, this chunk is a tool-use indicator, not content text. */
+  toolName?: string
 }
 
 export interface ChatResponseCompleteEvent {

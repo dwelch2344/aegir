@@ -327,6 +327,32 @@ services:
     depends_on:
       - conductor
 
+  metabase:
+    image: metabase/metabase:latest
+    container_name: aegir-metabase
+    restart: unless-stopped
+    ports:
+      - "3030:3000"
+    environment:
+      # Metabase stores its own metadata (questions, dashboards, settings) in postgres
+      MB_DB_TYPE: postgres
+      MB_DB_DBNAME: metabase
+      MB_DB_PORT: "5432"
+      MB_DB_USER: metabase_svc
+      MB_DB_PASS: metabase_dev
+      MB_DB_HOST: postgres
+      MB_SITE_URL: http://localhost:3030
+    volumes:
+      - ./data/metabase:/metabase-data
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:3000/api/health || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 10
+
   debezium-connect:
     image: debezium/connect:2.5
     restart: unless-stopped

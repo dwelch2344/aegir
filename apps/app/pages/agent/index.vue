@@ -235,10 +235,25 @@ onUnmounted(() => {
               v-for="msg in messages"
               :key="msg.id"
               class="flex"
-              :class="msg.role === 'user' ? 'justify-end' : 'justify-start'"
+              :class="[
+                msg.role === 'user' ? 'justify-end' : 'justify-start',
+                msg.id.startsWith('tool-') ? 'ml-10' : '',
+              ]"
             >
+              <!-- Tool indicator: compact, transient status line -->
               <div
-                v-if="msg.role !== 'user'"
+                v-if="msg.id.startsWith('tool-')"
+                class="flex items-center gap-2 text-xs text-gray-500 italic animate-pulse py-1"
+              >
+                <svg class="w-3.5 h-3.5 text-gray-600 animate-spin" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" d="M4.5 12a7.5 7.5 0 0 0 15 0m-15 0a7.5 7.5 0 0 1 15 0m-15 0H3m16.5 0H21m-1.5-4.5-.87.5m-15.26 8-.87.5m2.37-10 .87.5m15.26 8 .87.5M5.636 5.636l.707.707m11.314 11.314.707.707" />
+                </svg>
+                {{ msg.text }}
+              </div>
+
+              <!-- Assistant / system messages -->
+              <div
+                v-else-if="msg.role !== 'user'"
                 class="flex items-start gap-3 max-w-[75%]"
               >
                 <div
@@ -278,6 +293,7 @@ onUnmounted(() => {
                 </div>
               </div>
 
+              <!-- User messages -->
               <div v-else class="max-w-[75%]">
                 <div
                   class="rounded-2xl rounded-tr-sm bg-emerald-600 px-4 py-2.5 text-sm text-white whitespace-pre-wrap"

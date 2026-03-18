@@ -77,6 +77,29 @@ ensure_schema aegir system "$PG_SUPERUSER"
 ensure_schema aegir agents "$PG_SUPERUSER"
 
 # ──────────────────────────────────────────────
+# Analytics roles (read-only + read-write for BI/Metabase)
+# ──────────────────────────────────────────────
+ensure_user analytics_ro analytics_ro_dev
+ensure_user analytics_rw analytics_rw_dev
+
+# Grant USAGE on all domain schemas so analytics roles can read tables
+for schema in iam system legal agents practices projects conductor; do
+  $PSQL -d aegir -c "GRANT USAGE ON SCHEMA $schema TO analytics_ro;" 2>/dev/null || true
+  $PSQL -d aegir -c "GRANT SELECT ON ALL TABLES IN SCHEMA $schema TO analytics_ro;" 2>/dev/null || true
+  $PSQL -d aegir -c "GRANT USAGE ON SCHEMA $schema TO analytics_rw;" 2>/dev/null || true
+  $PSQL -d aegir -c "GRANT SELECT ON ALL TABLES IN SCHEMA $schema TO analytics_rw;" 2>/dev/null || true
+done
+
+# Scratch schema for analytics_rw tinkering (temp tables, materialized views)
+ensure_schema aegir analytics analytics_rw
+$PSQL -d aegir -c "GRANT USAGE ON SCHEMA analytics TO analytics_ro;" 2>/dev/null || true
+$PSQL -d aegir -c "GRANT SELECT ON ALL TABLES IN SCHEMA analytics TO analytics_ro;" 2>/dev/null || true
+
+# Metabase metadata database
+ensure_user metabase_svc metabase_dev
+ensure_database metabase metabase_svc
+
+# ──────────────────────────────────────────────
 # Conductor (workflow engine) — needs REPLICATION for CDC
 # ──────────────────────────────────────────────
 ensure_user conductor conductor_dev REPLICATION
