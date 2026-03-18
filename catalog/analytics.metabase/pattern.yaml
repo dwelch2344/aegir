@@ -1,0 +1,180 @@
+id: analytics.metabase
+version: "0.1.0"
+name: Metabase BI & Ad-Hoc Analytics
+description: >
+  Adds Metabase as a self-serve business intelligence tool with auto-provisioned
+  database connections. Two analytics roles are created in PostgreSQL:
+  analytics_ro (read-only SELECT across all domain schemas) and analytics_rw
+  (read-only on domain schemas plus full DML on a dedicated analytics scratch
+  schema for temp tables, materialized views, and tinkering). Metabase is
+  served behind Traefik at /infra/metabase and uses its own dedicated postgres
+  database for metadata. A first-boot setup script completes the Metabase
+  wizard and registers both database connections automatically.
+
+preconditions:
+  - harness.devcontainer
+  - db.postgres-isolated
+
+provides:
+  - business-analytics
+  - ad-hoc-queries
+  - self-serve-dashboards
+  - analytics-scratch-schema
+
+parameters:
+  metabaseSiteUrl:
+    type: string
+    required: false
+    default: http://localhost:3030
+    description: >
+      Metabase site URL, used for subpath routing behind a reverse proxy.
+  analyticsRoPassword:
+    type: string
+    required: false
+    default: analytics_ro_dev
+    description: Password for the analytics_ro read-only role.
+  analyticsRwPassword:
+    type: string
+    required: false
+    default: analytics_rw_dev
+    description: Password for the analytics_rw read-write role.
+  metabaseAdminEmail:
+    type: string
+    required: false
+    default: admin@aegir.local
+    description: Admin email for the Metabase initial setup wizard.
+
+application_instructions: |
+  ## 1. Add analytics roles to the OpenTofu postgres module
+
+  In `infra/local/tf/modules/postgres/main.tf`, add two roles:
+
+  - `analytics_ro`: login role with USAGE + SELECT on all domain schemas
+  - `analytics_rw`: login role with USAGE + SELECT on all domain schemas,
+    plus CREATE + full DML on a dedicated `analytics` scratch schema
+
+  Use `postgresql_default_privileges` to ensure future tables are automatically
+  granted. Wire the new password variables through `variables.tf` and the root
+  module.
+
+  ## 2. Add Metabase metadata database
+
+  In `.devcontainer/postgres/init-databases.sql`, add:
+
+  ```sql
+  CREATE DATABASE metabase;
+  CREATE USER metabase_svc WITH ENCRYPTED PASSWORD 'metabase_dev';
+  GRANT ALL PRIVILEGES ON DATABASE metabase TO metabase_svc;
+  ALTER DATABASE metabase OWNER TO metabase_svc;
+  ```
+
+  ## 3. Add analytics users to the init script
+
+  In `scripts/init.sh`, add idempotent user creation for `analytics_ro` and
+  `analytics_rw`, grant USAGE + SELECT on all domain schemas via a loop, and
+  create the `analytics` scratch schema.
+
+  ## 4. Add Metabase service to docker-compose
+
+  In `.devcontainer/docker-compose.yml`, add a `metabase` service using
+  `metabase/metabase:latest`. Configure `MB_DB_*` environment variables to
+  point at the `metabase` postgres database. Set `MB_SITE_URL` for subpath
+  awareness. Depend on postgres with health condition.
+
+  ```yaml
+  metabase:
+    image: metabase/metabase:latest
+    container_name: aegir-metabase
+    restart: unless-stopped
+    environment:
+      MB_DB_TYPE: postgres
+      MB_DB_DBNAME: metabase
+      MB_DB_PORT: "5432"
+      MB_DB_USER: metabase_svc
+      MB_DB_PASS: metabase_dev
+      MB_DB_HOST: postgres
+      MB_SITE_URL: http://localhost:3030
+    volumes:
+      - ./data/metabase:/metabase-data
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:3000/api/health || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 10
+  ```
+
+  ## 5. Add Traefik routing
+
+  In `.devcontainer/traefik/dynamic.yml`, add:
+
+  - Router: `infra-metabase` with `PathPrefix('/infra/metabase')` and
+    `strip-infra-metabase` middleware
+  - Middleware: `strip-infra-metabase` stripping `/infra/metabase`
+  - Service: `metabase` load-balancing to `http://metabase:3000`
+
+  ## 6. Create the auto-setup script
+
+  Create `.devcontainer/metabase/setup.sh` that:
+
+  1. Waits for Metabase to be healthy
+  2. Fetches the setup token from `/api/session/properties`
+  3. If a token exists (first boot), completes the setup wizard via
+     POST `/api/setup` with the admin user and the analytics_ro database
+  4. Logs in and adds the analytics_rw database via POST `/api/database`
+  5. Is fully idempotent — skips if already configured
+
+  ## 7. Add to the Settings page
+
+  In `apps/app/pages/settings/index.vue`, add a Metabase entry to the
+  Infrastructure section with a link to `/infra/metabase`.
+
+test_criteria:
+  - description: Metabase is accessible on its dedicated port
+    command: curl -sf http://localhost:3030/api/health | grep -q '"status":"ok"'
+  - description: Metabase metadata database exists
+    command: psql -h postgres -U aegir -d aegir -tc "SELECT 1 FROM pg_database WHERE datname='metabase'" | grep -q 1
+  - description: analytics_ro role can SELECT from domain tables
+    command: >-
+      PGPASSWORD=analytics_ro_dev psql -h postgres -U analytics_ro -d aegir
+      -c "SET search_path TO iam; SELECT 1 FROM information_schema.tables LIMIT 1;"
+  - description: analytics_rw role can create tables in analytics schema
+    command: >-
+      PGPASSWORD=analytics_rw_dev psql -h postgres -U analytics_rw -d aegir
+      -c "CREATE TABLE IF NOT EXISTS analytics.test_scratch (id int); DROP TABLE analytics.test_scratch;"
+  - description: Metabase setup script completes without errors
+    command: bash .devcontainer/metabase/setup.sh
+
+security_notes: |
+  - **Read-only by default:** The primary Metabase connection uses
+    `analytics_ro` which has SELECT-only access. Operators cannot
+    accidentally modify production data through the BI tool.
+  - **Scratch schema isolation:** The `analytics_rw` role can only write
+    to the `analytics` schema. It cannot INSERT, UPDATE, or DELETE in any
+    domain schema (iam, system, agents, etc.).
+  - **Local dev credentials only:** All passwords in this pattern are
+    deterministic dev-only values. Production deployments must use
+    secrets management (Vault, AWS Secrets Manager, etc.).
+  - **Metabase admin access:** The auto-setup creates a local admin
+    account. In production, configure OIDC/SAML authentication to
+    integrate with Keycloak or your identity provider.
+  - **No anonymous access:** Unlike Grafana's local dev config, Metabase
+    requires authentication even in dev. The setup script creates a
+    single admin account for convenience.
+  - **Network exposure:** Only Traefik exposes Metabase to the host.
+    Metabase's internal port (3000) is not published directly.
+
+touchpoints:
+  - infra/local/tf/modules/postgres/main.tf
+  - infra/local/tf/modules/postgres/variables.tf
+  - infra/local/tf/modules/postgres/outputs.tf
+  - infra/local/tf/main.tf
+  - infra/local/tf/variables.tf
+  - .devcontainer/postgres/init-databases.sql
+  - .devcontainer/docker-compose.yml
+  - .devcontainer/traefik/dynamic.yml
+  - .devcontainer/metabase/setup.sh
+  - scripts/init.sh
+  - apps/app/pages/settings/index.vue
