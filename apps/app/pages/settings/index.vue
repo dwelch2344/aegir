@@ -99,6 +99,20 @@ const sessionData = computed(() => {
               Open
             </a>
           </div>
+          <div class="border-t border-gray-800" />
+          <div class="flex items-center justify-between">
+            <div>
+              <p class="text-sm text-gray-100">Metabase</p>
+              <p class="text-xs text-gray-400">Business intelligence and ad-hoc SQL queries</p>
+            </div>
+            <a
+              href="http://localhost:3030"
+              target="_blank"
+              class="px-3 py-1 rounded text-sm bg-gray-700 text-gray-300 hover:bg-gray-600 transition-colors"
+            >
+              Open
+            </a>
+          </div>
         </div>
       </section>
     </div>

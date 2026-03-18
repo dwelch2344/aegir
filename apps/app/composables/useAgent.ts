@@ -219,7 +219,7 @@ export function useAgent() {
       agentSocket = ws
 
       const query = `subscription($conversationId: ID!) {
-        agentsMessageAdded(conversationId: $conversationId) { id conversationId role text createdAt }
+        agentsMessageAdded(conversationId: $conversationId) { id conversationId role text createdAt segmentIndex toolName }
       }`
 
       ws.addEventListener('open', () => {
@@ -240,40 +240,78 @@ export function useAgent() {
           resolve()
         }
         if (msg.type === 'next' && msg.id === 'agent-msg') {
-          const incoming = msg.payload.data.agentsMessageAdded as ChatMessage
+          const incoming = msg.payload.data.agentsMessageAdded as ChatMessage & {
+            segmentIndex?: number
+            toolName?: string | null
+          }
+
+          const isToolIndicator = incoming.id.startsWith('tool-')
           const isStreamChunk = incoming.id.startsWith('stream-')
+          const segIdx = incoming.segmentIndex ?? 0
 
-          // Find an existing placeholder to replace: thinking-*, stream-*, or complete-*
-          const placeholderIdx = messages.value.findIndex(
-            (m) => m.id.startsWith('thinking-') || m.id.startsWith('stream-') || m.id.startsWith('complete-'),
-          )
-
-          // Detect final persisted message (not a placeholder ID)
+          // Detect final persisted message (real DB id, not a synthetic prefix)
           const isFinalMessage =
             !isStreamChunk &&
+            !isToolIndicator &&
             !incoming.id.startsWith('thinking-') &&
             !incoming.id.startsWith('complete-') &&
             !incoming.id.startsWith('error-') &&
             incoming.role === 'assistant'
 
-          if (placeholderIdx !== -1) {
-            // Replace the placeholder (or previous chunk) with the incoming message
+          if (isToolIndicator) {
+            // Tool indicators are transient — replace any existing tool-* message,
+            // or insert after the last stream/thinking bubble.
             const updated = [...messages.value]
-            updated[placeholderIdx] = incoming
+            const existingToolIdx = updated.findIndex((m) => m.id.startsWith('tool-'))
+            if (existingToolIdx !== -1) {
+              updated[existingToolIdx] = incoming
+            } else {
+              // Remove the thinking placeholder if it's still there
+              const thinkingIdx = updated.findIndex((m) => m.id.startsWith('thinking-'))
+              if (thinkingIdx !== -1) updated.splice(thinkingIdx, 1)
+              updated.push(incoming)
+            }
             messages.value = updated
-          } else if (!isStreamChunk) {
-            // Final message — avoid duplicates
+          } else if (isStreamChunk) {
+            const updated = [...messages.value]
+
+            // Remove any tool indicator — content is flowing again
+            const toolIdx = updated.findIndex((m) => m.id.startsWith('tool-'))
+            if (toolIdx !== -1) updated.splice(toolIdx, 1)
+
+            // Remove thinking placeholder if still present
+            const thinkingIdx = updated.findIndex((m) => m.id.startsWith('thinking-'))
+            if (thinkingIdx !== -1) updated.splice(thinkingIdx, 1)
+
+            // Find existing bubble for this segment
+            const segBubbleIdx = updated.findIndex((m) => m.id.startsWith(`stream-${segIdx}-`))
+            if (segBubbleIdx !== -1) {
+              // Update the existing segment bubble in place
+              updated[segBubbleIdx] = incoming
+            } else {
+              // New segment — append a new bubble
+              updated.push(incoming)
+            }
+            messages.value = updated
+          } else if (isFinalMessage) {
+            // Final persisted message — remove all synthetic bubbles and replace
+            const cleaned = messages.value.filter(
+              (m) =>
+                !m.id.startsWith('stream-') &&
+                !m.id.startsWith('tool-') &&
+                !m.id.startsWith('thinking-') &&
+                !m.id.startsWith('complete-'),
+            )
+            if (!cleaned.some((m) => m.id === incoming.id)) {
+              cleaned.push(incoming)
+            }
+            messages.value = cleaned
+            processing.value = false
+          } else {
+            // Other messages (errors, etc.) — append, avoid duplicates
             if (!messages.value.some((m) => m.id === incoming.id)) {
               messages.value = [...messages.value, incoming]
             }
-          } else {
-            // First stream chunk, no placeholder yet — append
-            messages.value = [...messages.value, incoming]
-          }
-
-          // Unlock input when the final persisted assistant message arrives
-          if (isFinalMessage) {
-            processing.value = false
           }
         }
       })

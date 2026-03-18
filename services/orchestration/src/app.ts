@@ -4,6 +4,7 @@ import { getWorkflow, registerTaskDefs, registerWorkflow, signalWaitTask, startW
 import {
   agentChatTaskDefs,
   agentChatMessageWorkflow,
+  ensureProjectClonedTaskDefs,
   onboardingWorkflow,
   projectApplyPatternTaskDefs,
   projectApplyPatternWorkflow,
@@ -122,32 +123,10 @@ export async function buildApp() {
     async (req) => {
       const { conversationId, text, projectId } = req.body
 
-      // If projectId is provided, resolve localPath from the projects service
-      let localPath: string | null = null
-      if (projectId) {
-        try {
-          const res = await fetch(config.projects.graphqlUrl, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              query: `query($input: ProjectsProjectSearchInput!) {
-              projects { projects { search(input: $input) { results { localPath } } } }
-            }`,
-              variables: { input: { idIn: [projectId] } },
-            }),
-          })
-          const json = (await res.json()) as any
-          localPath = json.data?.projects?.projects?.search?.results?.[0]?.localPath ?? null
-        } catch {
-          // best effort — fall back to no cwd
-        }
-      }
-
       const workflowId = await startWorkflow('agent_chat_message', {
         conversationId,
         text,
         projectId: projectId ?? null,
-        localPath,
       })
       return { workflowId }
     },
@@ -180,24 +159,7 @@ export async function buildApp() {
   // Project check-status — run shipyard status on a synced project
   fastify.post<{ Body: { projectId: string } }>('/projects/check-status', async (req) => {
     const { projectId } = req.body
-
-    // Look up localPath from projects service
-    const gqlUrl = config.projects.graphqlUrl
-    const res = await fetch(gqlUrl, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        query: `query($input: ProjectsProjectSearchInput!) {
-          projects { projects { search(input: $input) { results { localPath } } } }
-        }`,
-        variables: { input: { idIn: [projectId] } },
-      }),
-    })
-    const json = (await res.json()) as any
-    const localPath = json.data?.projects?.projects?.search?.results?.[0]?.localPath
-    if (!localPath) throw new Error(`Project ${projectId} has no localPath — sync first`)
-
-    const workflowId = await startWorkflow('project_check_status', { projectId, localPath })
+    const workflowId = await startWorkflow('project_check_status', { projectId }, 2)
     return { workflowId }
   })
 
@@ -206,29 +168,7 @@ export async function buildApp() {
     '/projects/apply-pattern',
     async (req) => {
       const { projectId, patternId, params } = req.body
-
-      // Look up localPath
-      const gqlUrl = config.projects.graphqlUrl
-      const res = await fetch(gqlUrl, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          query: `query($input: ProjectsProjectSearchInput!) {
-            projects { projects { search(input: $input) { results { localPath } } } }
-          }`,
-          variables: { input: { idIn: [projectId] } },
-        }),
-      })
-      const json = (await res.json()) as any
-      const localPath = json.data?.projects?.projects?.search?.results?.[0]?.localPath
-      if (!localPath) throw new Error(`Project ${projectId} has no localPath — sync first`)
-
-      const workflowId = await startWorkflow('project_apply_pattern', {
-        projectId,
-        localPath,
-        patternId,
-        params: params ?? {},
-      })
+      const workflowId = await startWorkflow('project_apply_pattern', { projectId, patternId, params: params ?? {} }, 2)
       return { workflowId }
     },
   )
@@ -236,24 +176,7 @@ export async function buildApp() {
   // Project diagnostics — trigger Claude diagnostic workflow
   fastify.post<{ Body: { projectId: string } }>('/projects/diagnostics', async (req) => {
     const { projectId } = req.body
-
-    // Look up localPath
-    const gqlUrl = config.projects.graphqlUrl
-    const res = await fetch(gqlUrl, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        query: `query($input: ProjectsProjectSearchInput!) {
-          projects { projects { search(input: $input) { results { localPath } } } }
-        }`,
-        variables: { input: { idIn: [projectId] } },
-      }),
-    })
-    const json = (await res.json()) as any
-    const localPath = json.data?.projects?.projects?.search?.results?.[0]?.localPath
-    if (!localPath) throw new Error(`Project ${projectId} has no localPath — sync first`)
-
-    const workflowId = await startWorkflow('project_diagnostics', { projectId, localPath })
+    const workflowId = await startWorkflow('project_diagnostics', { projectId }, 2)
     return { workflowId }
   })
 
@@ -288,6 +211,7 @@ async function registerWithRetry(maxAttempts = 20, delayMs = 3000) {
         ...taskDefs,
         ...selectHealthTaskDefs,
         ...agentChatTaskDefs,
+        ...ensureProjectClonedTaskDefs,
         ...projectSyncTaskDefs,
         ...projectCheckStatusTaskDefs,
         ...projectApplyPatternTaskDefs,

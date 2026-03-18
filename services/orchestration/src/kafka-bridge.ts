@@ -20,7 +20,6 @@ import {
   type WorkflowLifecycleEvent,
 } from '@aegir/kafka'
 import { startWorkflow } from './conductor.js'
-import { config } from './config.js'
 
 const kafka = createKafka('orchestration')
 
@@ -57,32 +56,10 @@ export async function startKafkaBridge(signal: AbortSignal): Promise<void> {
 }
 
 async function handleChatStart(cmd: Extract<AgentChatCommand, { type: 'chat.start' }>) {
-  // Resolve localPath if projectId is provided (same logic as REST endpoint)
-  let localPath: string | null = null
-  if (cmd.projectId) {
-    try {
-      const res = await fetch(config.projects.graphqlUrl, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          query: `query($input: ProjectsProjectSearchInput!) {
-            projects { projects { search(input: $input) { results { localPath } } } }
-          }`,
-          variables: { input: { idIn: [cmd.projectId] } },
-        }),
-      })
-      const json = (await res.json()) as any
-      localPath = json.data?.projects?.projects?.search?.results?.[0]?.localPath ?? null
-    } catch {
-      // best effort
-    }
-  }
-
   const workflowId = await startWorkflow('agent_chat_message', {
     conversationId: cmd.conversationId,
-    projectId: cmd.projectId,
+    projectId: cmd.projectId ?? null,
     text: cmd.text,
-    localPath,
   })
 
   // Publish confirmation event back to agents service

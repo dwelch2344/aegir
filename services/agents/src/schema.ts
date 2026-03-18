@@ -16,6 +16,10 @@ export const typeDefs = `
     role: String!
     text: String!
     createdAt: String!
+    """Content segment index during streaming (0-based, increments after each tool use)."""
+    segmentIndex: Int
+    """When set, this message is a transient tool-use indicator."""
+    toolName: String
   }
 
   type AgentsConversationSearch {

@@ -58,16 +58,23 @@ export async function startKafkaBridge(signal: AbortSignal): Promise<void> {
 
       try {
         switch (event.type) {
-          case 'chat.stream.chunk':
-            // Bridge stream chunks to WebSocket subscribers
+          case 'chat.stream.chunk': {
+            // Bridge stream chunks to WebSocket subscribers.
+            // Encode segment index + tool vs content into the ID so the
+            // frontend can manage multiple bubbles during streaming.
+            const seg = event.segmentIndex ?? 0
+            const id = event.toolName ? `tool-${seg}-${Date.now()}` : `stream-${seg}-${Date.now()}`
             publishToWebSocket(event.conversationId, {
-              id: `stream-${Date.now()}`,
+              id,
               conversationId: event.conversationId,
               role: 'assistant',
               text: event.text,
               createdAt: event.timestamp,
+              segmentIndex: seg,
+              toolName: event.toolName ?? null,
             })
             break
+          }
 
           case 'chat.response.complete':
             // The deliver-response worker will persist via addMessage,

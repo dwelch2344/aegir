@@ -36,6 +36,16 @@ variable "system_svc_password" {
   sensitive = true
 }
 
+variable "analytics_ro_password" {
+  default   = "analytics_ro_dev"
+  sensitive = true
+}
+
+variable "analytics_rw_password" {
+  default   = "analytics_rw_dev"
+  sensitive = true
+}
+
 # ---------- Keycloak ----------
 
 variable "keycloak_url" {

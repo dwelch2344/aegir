@@ -21,6 +21,12 @@ ALTER USER conductor WITH REPLICATION;
 CREATE USER agents_svc WITH ENCRYPTED PASSWORD 'agents_dev';
 GRANT ALL PRIVILEGES ON DATABASE aegir TO agents_svc;
 
+-- Create metabase database and user for the BI/analytics tool
+CREATE DATABASE metabase;
+CREATE USER metabase_svc WITH ENCRYPTED PASSWORD 'metabase_dev';
+GRANT ALL PRIVILEGES ON DATABASE metabase TO metabase_svc;
+ALTER DATABASE metabase OWNER TO metabase_svc;
+
 -- Create practices schema for the practices service (context, BCP, catalog)
 -- The practices service uses the main aegir database with its own schema,
 -- created automatically by Moribashi pgPlugin migrations.

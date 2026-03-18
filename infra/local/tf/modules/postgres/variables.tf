@@ -21,6 +21,18 @@ variable "system_svc_password" {
   sensitive   = true
 }
 
+variable "analytics_ro_password" {
+  description = "Password for the analytics_ro role"
+  type        = string
+  sensitive   = true
+}
+
+variable "analytics_rw_password" {
+  description = "Password for the analytics_rw role"
+  type        = string
+  sensitive   = true
+}
+
 variable "host" {
   description = "PostgreSQL host (used for connection string outputs)"
   type        = string

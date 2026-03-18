@@ -37,9 +37,11 @@ module "postgres" {
   database           = var.pg_database
   host               = var.pg_host
   port               = var.pg_port
-  iam_svc_password    = var.iam_svc_password
-  legal_svc_password  = var.legal_svc_password
-  system_svc_password = var.system_svc_password
+  iam_svc_password       = var.iam_svc_password
+  legal_svc_password     = var.legal_svc_password
+  system_svc_password    = var.system_svc_password
+  analytics_ro_password  = var.analytics_ro_password
+  analytics_rw_password  = var.analytics_rw_password
 }
 
 module "keycloak" {

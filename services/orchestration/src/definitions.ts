@@ -229,7 +229,7 @@ export const agentChatTaskDefs: TaskDef[] = [
 export const agentChatMessageWorkflow: WorkflowDef = {
   name: 'agent_chat_message',
   description: 'Short-lived per-message workflow: gather context, invoke Claude, deliver response',
-  version: 1,
+  version: 2,
   schemaVersion: 2,
   ownerEmail: agentChatOwner,
   tasks: [
@@ -247,7 +247,7 @@ export const agentChatMessageWorkflow: WorkflowDef = {
       type: 'SIMPLE',
       inputParameters: {
         conversationId: '${workflow.input.conversationId}',
-        localPath: '${workflow.input.localPath}',
+        projectId: '${workflow.input.projectId}',
         text: '${workflow.input.text}',
         messages: '${agent_gather_context_ref.output.messages}',
       },
@@ -271,6 +271,20 @@ export const agentChatMessageWorkflow: WorkflowDef = {
 // --- Project sync workflow ---
 
 const projectsOwner = 'projects@aegir.local'
+
+export const ensureProjectClonedTaskDefs: TaskDef[] = [
+  {
+    name: 'ensure_project_cloned',
+    description: 'Verifies project workspace exists on disk, re-cloning if stale (e.g. after container restart)',
+    retryCount: 2,
+    retryLogic: 'FIXED',
+    retryDelaySeconds: 5,
+    timeoutSeconds: 120,
+    responseTimeoutSeconds: 120,
+    timeoutPolicy: 'TIME_OUT_WF',
+    ownerEmail: projectsOwner,
+  },
+]
 
 export const projectCheckStatusTaskDefs: TaskDef[] = [
   {
@@ -314,17 +328,25 @@ export const projectApplyPatternTaskDefs: TaskDef[] = [
 export const projectCheckStatusWorkflow: WorkflowDef = {
   name: 'project_check_status',
   description: 'Run shipyard status on a synced project and save the report',
-  version: 1,
+  version: 2,
   schemaVersion: 2,
   ownerEmail: projectsOwner,
   tasks: [
+    {
+      name: 'ensure_project_cloned',
+      taskReferenceName: 'ensure_cloned_ref',
+      type: 'SIMPLE',
+      inputParameters: {
+        projectId: '${workflow.input.projectId}',
+      },
+    },
     {
       name: 'project_check_status',
       taskReferenceName: 'project_check_status_ref',
       type: 'SIMPLE',
       inputParameters: {
         projectId: '${workflow.input.projectId}',
-        localPath: '${workflow.input.localPath}',
+        localPath: '${ensure_cloned_ref.output.localPath}',
       },
     },
   ],
@@ -339,17 +361,25 @@ export const projectCheckStatusWorkflow: WorkflowDef = {
 export const projectApplyPatternWorkflow: WorkflowDef = {
   name: 'project_apply_pattern',
   description: 'Apply a catalog pattern to a project, then commit and push changes',
-  version: 1,
+  version: 2,
   schemaVersion: 2,
   ownerEmail: projectsOwner,
   tasks: [
+    {
+      name: 'ensure_project_cloned',
+      taskReferenceName: 'ensure_cloned_ref',
+      type: 'SIMPLE',
+      inputParameters: {
+        projectId: '${workflow.input.projectId}',
+      },
+    },
     {
       name: 'project_apply_pattern',
       taskReferenceName: 'project_apply_pattern_ref',
       type: 'SIMPLE',
       inputParameters: {
         projectId: '${workflow.input.projectId}',
-        localPath: '${workflow.input.localPath}',
+        localPath: '${ensure_cloned_ref.output.localPath}',
         patternId: '${workflow.input.patternId}',
         params: '${workflow.input.params}',
       },
@@ -412,17 +442,25 @@ export const projectDiagnosticsTaskDefs: TaskDef[] = [
 export const projectDiagnosticsWorkflow: WorkflowDef = {
   name: 'project_diagnostics',
   description: 'Run AI-powered diagnostics on a synced project',
-  version: 1,
+  version: 2,
   schemaVersion: 2,
   ownerEmail: projectsOwner,
   tasks: [
+    {
+      name: 'ensure_project_cloned',
+      taskReferenceName: 'ensure_cloned_ref',
+      type: 'SIMPLE',
+      inputParameters: {
+        projectId: '${workflow.input.projectId}',
+      },
+    },
     {
       name: 'project_run_diagnostics',
       taskReferenceName: 'project_run_diagnostics_ref',
       type: 'SIMPLE',
       inputParameters: {
         projectId: '${workflow.input.projectId}',
-        localPath: '${workflow.input.localPath}',
+        localPath: '${ensure_cloned_ref.output.localPath}',
       },
     },
   ],
