@@ -1,4 +1,6 @@
 import { execSync } from 'node:child_process'
+import { existsSync } from 'node:fs'
+import { join } from 'node:path'
 import type { TaskResult } from '../conductor.js'
 import { config } from '../config.js'
 import { logProjectActivity } from './project-activity.js'
@@ -17,6 +19,34 @@ export async function handleProjectCheckStatus(task: any): Promise<TaskResult> {
   })
 
   try {
+    // A ship must have a shipyard.manifest for the CLI to work
+    if (!existsSync(join(localPath, 'shipyard.manifest'))) {
+      const report = {
+        projectId,
+        issues: ['No shipyard.manifest found — this project has not been onboarded to the Shipyard yet.'],
+        servicesOk: 0,
+        servicesMissing: 0,
+        outdatedPatterns: 0,
+      }
+
+      await logProjectActivity({
+        projectId,
+        workflowId: wfId,
+        type: 'check-status',
+        taskName: 'project_check_status',
+        status: 'COMPLETED',
+        message: 'No shipyard.manifest found',
+      })
+
+      return {
+        workflowInstanceId: task.workflowInstanceId,
+        taskId: task.taskId,
+        status: 'COMPLETED',
+        outputData: report,
+        logs: [{ log: 'No shipyard.manifest found — skipping CLI status check', createdTime: Date.now() }],
+      }
+    }
+
     // Run shipyard status on the project
     const shipyardBin = config.projects.shipyardBin
     const catalogDir = config.projects.catalogDir

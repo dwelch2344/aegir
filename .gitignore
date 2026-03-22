@@ -15,3 +15,4 @@ log.txt
 *.hcl
 *.tfstate
 *.tfstate.*
+.sensitive
