@@ -12,8 +12,10 @@ import {
   projectCheckStatusWorkflow,
   projectDiagnosticsTaskDefs,
   projectDiagnosticsWorkflow,
+  projectResetStatusTaskDefs,
   projectScaffoldTaskDefs,
   projectScaffoldWorkflow,
+  projectSyncFailureWorkflow,
   projectSyncTaskDefs,
   projectSyncWorkflow,
   selectHealthAcaWorkflow,
@@ -113,7 +115,7 @@ export async function buildApp() {
       projectId,
       repoUrl: url,
       branch: br ?? 'main',
-    })
+    }, 2)
     return { workflowId }
   })
 
@@ -212,6 +214,7 @@ async function registerWithRetry(maxAttempts = 20, delayMs = 3000) {
         ...selectHealthTaskDefs,
         ...agentChatTaskDefs,
         ...ensureProjectClonedTaskDefs,
+        ...projectResetStatusTaskDefs,
         ...projectSyncTaskDefs,
         ...projectCheckStatusTaskDefs,
         ...projectApplyPatternTaskDefs,
@@ -226,6 +229,7 @@ async function registerWithRetry(maxAttempts = 20, delayMs = 3000) {
         selectHealthAcaWorkflow,
         agentChatMessageWorkflow,
         projectSyncWorkflow,
+        projectSyncFailureWorkflow,
         projectCheckStatusWorkflow,
         projectApplyPatternWorkflow,
         projectDiagnosticsWorkflow,

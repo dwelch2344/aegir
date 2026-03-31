@@ -27,6 +27,10 @@ services:
     type: graphql-subgraph
     port: 4003
     schema: agents
+  - name: projects
+    type: graphql-subgraph
+    port: 4004
+    schema: projects
   - name: practices
     type: graphql-subgraph
     port: 4005

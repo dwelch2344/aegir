@@ -60,6 +60,11 @@ services:
       ### Dev container gets access to host docker
       - /var/run/docker.sock:/var/run/docker.sock
 
+      ### Credential persistence across restarts
+      - ~/.devcontainers/mount/aegir/secrets:/home/node/.secrets
+      - ~/.devcontainers/mount/aegir/claude:/home/node/.claude
+      - ~/.config/gh:/home/node/.config/gh
+
   traefik:
     image: traefik:v3.3
     container_name: aegir-traefik

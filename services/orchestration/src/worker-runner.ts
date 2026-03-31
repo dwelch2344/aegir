@@ -20,6 +20,7 @@ import { handleEnsureProjectCloned } from './workers/project-ensure-cloned.js'
 import { handleProjectCommitPush } from './workers/project-commit-push.js'
 import { handleProjectRunDiagnostics } from './workers/project-run-diagnostics.js'
 import { handleProjectParseManifest } from './workers/project-parse-manifest.js'
+import { handleProjectResetStatus } from './workers/project-reset-status.js'
 import { handleProjectStoreMetadata } from './workers/project-store-metadata.js'
 import { handleValidateIdentity } from './workers/validate-identity.js'
 
@@ -44,6 +45,7 @@ const handlers: Record<string, TaskHandler> = {
   ensure_project_cloned: handleEnsureProjectCloned,
   project_clone: handleProjectClone,
   project_parse_manifest: handleProjectParseManifest,
+  project_reset_status: handleProjectResetStatus,
   project_store_metadata: handleProjectStoreMetadata,
   project_check_status: handleProjectCheckStatus,
   project_apply_pattern: handleProjectApplyPattern,

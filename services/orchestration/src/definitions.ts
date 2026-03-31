@@ -469,6 +469,40 @@ export const projectDiagnosticsWorkflow: WorkflowDef = {
   },
 }
 
+export const projectResetStatusTaskDefs: TaskDef[] = [
+  {
+    name: 'project_reset_status',
+    description: 'Resets project status to PENDING after a failed sync workflow',
+    retryCount: 2,
+    retryLogic: 'FIXED',
+    retryDelaySeconds: 3,
+    timeoutSeconds: 15,
+    responseTimeoutSeconds: 10,
+    timeoutPolicy: 'TIME_OUT_WF',
+    ownerEmail: projectsOwner,
+  },
+]
+
+export const projectSyncFailureWorkflow: WorkflowDef = {
+  name: 'project_sync_failure',
+  description: 'Failure handler for project_sync: resets project status from CLONING to PENDING',
+  version: 1,
+  schemaVersion: 2,
+  ownerEmail: projectsOwner,
+  tasks: [
+    {
+      name: 'project_reset_status',
+      taskReferenceName: 'project_reset_status_ref',
+      type: 'SIMPLE',
+      inputParameters: {
+        projectId: '${workflow.input.projectId}',
+        failedWorkflowId: '${workflow.input.workflowId}',
+        reason: '${workflow.input.reason}',
+      },
+    },
+  ],
+}
+
 export const projectSyncTaskDefs: TaskDef[] = [
   {
     name: 'project_clone',
@@ -508,9 +542,10 @@ export const projectSyncTaskDefs: TaskDef[] = [
 export const projectSyncWorkflow: WorkflowDef = {
   name: 'project_sync',
   description: 'Clone a project repo, parse its manifest, and store metadata',
-  version: 1,
+  version: 2,
   schemaVersion: 2,
   ownerEmail: projectsOwner,
+  failureWorkflow: 'project_sync_failure',
   tasks: [
     {
       name: 'project_clone',
@@ -519,7 +554,6 @@ export const projectSyncWorkflow: WorkflowDef = {
       inputParameters: {
         projectId: '${workflow.input.projectId}',
         repoUrl: '${workflow.input.repoUrl}',
-        repoFullName: '${workflow.input.repoFullName}',
         branch: '${workflow.input.branch}',
       },
     },

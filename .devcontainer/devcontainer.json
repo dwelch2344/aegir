@@ -7,14 +7,9 @@
   "overrideCommand": true,
   "remoteUser": "node",
   "updateRemoteUserUID": true,
+  "initializeCommand": "mkdir -p ~/.devcontainers/mount/aegir/secrets ~/.devcontainers/mount/aegir/claude ~/.config/gh",
   "mounts": [
-    "source=../,target=//workspace,type=bind",
-    "source=../../,target=//projects,type=bind",
-    "source=${localEnv:HOME}/.devcontainers/mount/aegir/secrets,target=/home/node/.secrets,type=bind",
-    "source=${localEnv:HOME}/.devcontainers/mount/aegir/claude,target=/home/node/.claude,type=bind",
-    "source=${localEnv:HOME}/.ssh,target=/home/node/.ssh,type=bind",
-    "source=${localEnv:HOME}/.gitconfig,target=/home/node/.gitconfig,type=bind",
-    "source=${localEnv:HOME}/.config/gh,target=/home/node/.config/gh,type=bind"
+    "source=../../,target=//projects,type=bind"
   ],
   "forwardPorts": [7356],
   "containerEnv": {
