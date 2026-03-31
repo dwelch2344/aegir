@@ -464,6 +464,20 @@ export function useAgent() {
     connected.value = false
   }
 
+  async function clearAllConversations() {
+    disconnectSockets()
+    const ids = conversations.value.map((c) => c.id)
+    for (const id of ids) {
+      try {
+        await gql(`mutation($id: ID!) { agents { conversations { delete(id: $id) } } }`, { id })
+      } catch { /* best effort */ }
+    }
+    conversations.value = []
+    activeId.value = null
+    messages.value = []
+    processing.value = false
+  }
+
   async function clearConversation() {
     if (activeId.value) {
       await deleteConversation(activeId.value)
@@ -514,6 +528,7 @@ export function useAgent() {
     connectNotifications,
     disconnect: disconnectSockets,
     clearConversation,
+    clearAllConversations,
     handleOrgSwitch,
   }
 }

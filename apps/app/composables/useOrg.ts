@@ -25,6 +25,7 @@ const orgSwitchCallbacks: Array<(orgId: number) => void> = []
 export function useOrg() {
   const activeOrgId = useCookie<number | null>('activeOrgId', {
     default: () => null,
+    maxAge: 60 * 60 * 24 * 365, // persist across tabs & browser restarts
     watch: true,
   })
 
