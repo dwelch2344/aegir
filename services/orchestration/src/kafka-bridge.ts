@@ -60,7 +60,7 @@ async function handleChatStart(cmd: Extract<AgentChatCommand, { type: 'chat.star
     conversationId: cmd.conversationId,
     projectId: cmd.projectId ?? null,
     text: cmd.text,
-  })
+  }, 2)
 
   // Publish confirmation event back to agents service
   const event: ChatWorkflowStartedEvent = {
