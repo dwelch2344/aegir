@@ -52,6 +52,62 @@ const sessionData = computed(() => {
               Open
             </a>
           </div>
+          <div class="border-t border-gray-800" />
+          <div class="flex items-center justify-between">
+            <div>
+              <p class="text-sm text-gray-100">System Subgraph</p>
+              <p class="text-xs text-gray-400">System domain schema</p>
+            </div>
+            <a
+              href="/api/system/graphiql"
+              target="_blank"
+              class="px-3 py-1 rounded text-sm bg-gray-700 text-gray-300 hover:bg-gray-600 transition-colors"
+            >
+              Open
+            </a>
+          </div>
+          <div class="border-t border-gray-800" />
+          <div class="flex items-center justify-between">
+            <div>
+              <p class="text-sm text-gray-100">Agents Subgraph</p>
+              <p class="text-xs text-gray-400">AI conversation & orchestration schema</p>
+            </div>
+            <a
+              href="/api/agents/graphiql"
+              target="_blank"
+              class="px-3 py-1 rounded text-sm bg-gray-700 text-gray-300 hover:bg-gray-600 transition-colors"
+            >
+              Open
+            </a>
+          </div>
+          <div class="border-t border-gray-800" />
+          <div class="flex items-center justify-between">
+            <div>
+              <p class="text-sm text-gray-100">Projects Subgraph</p>
+              <p class="text-xs text-gray-400">Projects domain schema</p>
+            </div>
+            <a
+              href="/api/projects/graphiql"
+              target="_blank"
+              class="px-3 py-1 rounded text-sm bg-gray-700 text-gray-300 hover:bg-gray-600 transition-colors"
+            >
+              Open
+            </a>
+          </div>
+          <div class="border-t border-gray-800" />
+          <div class="flex items-center justify-between">
+            <div>
+              <p class="text-sm text-gray-100">Practices Subgraph</p>
+              <p class="text-xs text-gray-400">Best practices management schema</p>
+            </div>
+            <a
+              href="/api/practices/graphiql"
+              target="_blank"
+              class="px-3 py-1 rounded text-sm bg-gray-700 text-gray-300 hover:bg-gray-600 transition-colors"
+            >
+              Open
+            </a>
+          </div>
         </div>
       </section>
 
@@ -106,7 +162,49 @@ const sessionData = computed(() => {
               <p class="text-xs text-gray-400">Business intelligence and ad-hoc SQL queries</p>
             </div>
             <a
-              href="http://localhost:3030"
+              href="/infra/metabase"
+              target="_blank"
+              class="px-3 py-1 rounded text-sm bg-gray-700 text-gray-300 hover:bg-gray-600 transition-colors"
+            >
+              Open
+            </a>
+          </div>
+          <div class="border-t border-gray-800" />
+          <div class="flex items-center justify-between">
+            <div>
+              <p class="text-sm text-gray-100">MailHog</p>
+              <p class="text-xs text-gray-400">SMTP testing &amp; email capture</p>
+            </div>
+            <a
+              href="/infra/mailhog"
+              target="_blank"
+              class="px-3 py-1 rounded text-sm bg-gray-700 text-gray-300 hover:bg-gray-600 transition-colors"
+            >
+              Open
+            </a>
+          </div>
+          <div class="border-t border-gray-800" />
+          <div class="flex items-center justify-between">
+            <div>
+              <p class="text-sm text-gray-100">Keycloak</p>
+              <p class="text-xs text-gray-400">Identity provider admin console</p>
+            </div>
+            <a
+              href="/infra/idp"
+              target="_blank"
+              class="px-3 py-1 rounded text-sm bg-gray-700 text-gray-300 hover:bg-gray-600 transition-colors"
+            >
+              Open
+            </a>
+          </div>
+          <div class="border-t border-gray-800" />
+          <div class="flex items-center justify-between">
+            <div>
+              <p class="text-sm text-gray-100">MinIO Console</p>
+              <p class="text-xs text-gray-400">S3-compatible object storage</p>
+            </div>
+            <a
+              href="/infra/minio"
               target="_blank"
               class="px-3 py-1 rounded text-sm bg-gray-700 text-gray-300 hover:bg-gray-600 transition-colors"
             >

@@ -26,6 +26,18 @@ http:
       entryPoints: [web]
       service: redpanda-console
 
+    infra-metabase:
+      rule: "PathPrefix(`/infra/metabase`)"
+      entryPoints: [web]
+      service: metabase
+      middlewares: [strip-infra-metabase]
+
+    infra-minio:
+      rule: "PathPrefix(`/infra/minio`)"
+      entryPoints: [web]
+      service: minio-console
+      middlewares: [strip-infra-minio]
+
     root-redirect:
       rule: "Path(`/`)"
       entryPoints: [web]
@@ -55,6 +67,18 @@ http:
       service: projects
       middlewares: [strip-api-projects]
 
+    api-agents:
+      rule: "PathPrefix(`/api/agents`)"
+      entryPoints: [web]
+      service: agents
+      middlewares: [strip-api-agents]
+
+    api-practices:
+      rule: "PathPrefix(`/api/practices`)"
+      entryPoints: [web]
+      service: practices
+      middlewares: [strip-api-practices]
+
     api-gateway:
       rule: "PathPrefix(`/api/graphql`) || PathPrefix(`/api/graphiql`)"
       entryPoints: [web]
@@ -65,6 +89,14 @@ http:
     strip-infra-mailhog:
       stripPrefix:
         prefixes: ["/infra/mailhog"]
+
+    strip-infra-metabase:
+      stripPrefix:
+        prefixes: ["/infra/metabase"]
+
+    strip-infra-minio:
+      stripPrefix:
+        prefixes: ["/infra/minio"]
 
     redirect-to-app:
       redirectRegex:
@@ -83,6 +115,14 @@ http:
     strip-api-system:
       stripPrefix:
         prefixes: ["/api/system"]
+
+    strip-api-agents:
+      stripPrefix:
+        prefixes: ["/api/agents"]
+
+    strip-api-practices:
+      stripPrefix:
+        prefixes: ["/api/practices"]
 
     strip-api-projects:
       stripPrefix:
@@ -109,10 +149,20 @@ http:
         servers:
           - url: "http://aegir-dev:4002"
 
+    agents:
+      loadBalancer:
+        servers:
+          - url: "http://aegir-dev:4003"
+
     projects:
       loadBalancer:
         servers:
           - url: "http://aegir-dev:4004"
+
+    practices:
+      loadBalancer:
+        servers:
+          - url: "http://aegir-dev:4005"
 
     mailhog:
       loadBalancer:
@@ -133,6 +183,16 @@ http:
       loadBalancer:
         servers:
           - url: "http://conductor-ui:5000"
+
+    metabase:
+      loadBalancer:
+        servers:
+          - url: "http://metabase:3000"
+
+    minio-console:
+      loadBalancer:
+        servers:
+          - url: "http://minio:9001"
 
     redpanda-console:
       loadBalancer:

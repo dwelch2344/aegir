@@ -5,7 +5,7 @@ set -euo pipefail
 # Completes the setup wizard and adds the aegir database as a data source.
 # Safe to run multiple times — skips if already configured.
 
-METABASE_URL="${METABASE_URL:-http://localhost:3030}"
+METABASE_URL="${METABASE_URL:-http://metabase:3000}"
 SETUP_TOKEN_ENDPOINT="$METABASE_URL/api/session/properties"
 SETUP_ENDPOINT="$METABASE_URL/api/setup"
 DATABASE_ENDPOINT="$METABASE_URL/api/database"

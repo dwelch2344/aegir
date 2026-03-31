@@ -20,6 +20,7 @@ const {
   sendMessage,
   disconnect,
   clearConversation,
+  clearAllConversations,
 } = useAgent();
 
 const input = ref("");
@@ -117,12 +118,22 @@ onUnmounted(() => {
             class="text-xs font-medium text-gray-400 uppercase tracking-wider"
             >History</span
           >
-          <button
-            class="text-xs px-2 py-1 rounded bg-gray-800 text-gray-400 hover:text-gray-200 hover:bg-gray-700 transition-colors"
-            @click="handleNew"
-          >
-            + New
-          </button>
+          <div class="flex items-center gap-1">
+            <button
+              v-if="conversations.length > 0"
+              class="text-xs px-2 py-1 rounded text-gray-500 hover:text-red-400 hover:bg-gray-800 transition-colors"
+              title="Clear all conversations"
+              @click="clearAllConversations"
+            >
+              Clear
+            </button>
+            <button
+              class="text-xs px-2 py-1 rounded bg-gray-800 text-gray-400 hover:text-gray-200 hover:bg-gray-700 transition-colors"
+              @click="handleNew"
+            >
+              + New
+            </button>
+          </div>
         </div>
         <div class="flex-1 overflow-y-auto">
           <div
@@ -295,11 +306,7 @@ onUnmounted(() => {
 
               <!-- User messages -->
               <div v-else class="max-w-[75%]">
-                <div
-                  class="rounded-2xl rounded-tr-sm bg-emerald-600 px-4 py-2.5 text-sm text-white whitespace-pre-wrap"
-                >
-                  {{ msg.text }}
-                </div>
+                <div class="rounded-2xl rounded-tr-sm bg-emerald-600 px-4 py-2.5 text-sm text-white whitespace-pre-wrap">{{ msg.text }}</div>
               </div>
             </div>
           </div>
