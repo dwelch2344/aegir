@@ -36,7 +36,8 @@ describe('Cross-Entity Invariants — Adversarial QA', () => {
       method: 'POST',
       url: '/graphql',
       payload: {
-        query: '{ practices { bcp { categories { search(input: { organizationId: 1 }) { results { id categoryId entries { id categoryId } } } } } } }',
+        query:
+          '{ practices { bcp { categories { search(input: { organizationId: 1 }) { results { id categoryId entries { id categoryId } } } } } } }',
       },
     })
     const categories = catRes.json().data.practices.bcp.categories.search.results
@@ -104,8 +105,9 @@ describe('Cross-Entity Invariants — Adversarial QA', () => {
         } } } } }`,
       },
     })
-    const catBefore = beforeDelete.json().data.practices.bcp.categories.search.results
-      .find((c: any) => c.categoryId === catId)
+    const catBefore = beforeDelete
+      .json()
+      .data.practices.bcp.categories.search.results.find((c: any) => c.categoryId === catId)
     expect(catBefore.entries).toHaveLength(2)
 
     // Delete the category
@@ -127,8 +129,7 @@ describe('Cross-Entity Invariants — Adversarial QA', () => {
         } } } } }`,
       },
     })
-    const catIds = afterDelete.json().data.practices.bcp.categories.search.results
-      .map((c: any) => c.categoryId)
+    const catIds = afterDelete.json().data.practices.bcp.categories.search.results.map((c: any) => c.categoryId)
     expect(catIds).not.toContain(catId)
   })
 

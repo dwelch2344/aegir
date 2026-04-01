@@ -470,7 +470,9 @@ export function useAgent() {
     for (const id of ids) {
       try {
         await gql(`mutation($id: ID!) { agents { conversations { delete(id: $id) } } }`, { id })
-      } catch { /* best effort */ }
+      } catch {
+        /* best effort */
+      }
     }
     conversations.value = []
     activeId.value = null

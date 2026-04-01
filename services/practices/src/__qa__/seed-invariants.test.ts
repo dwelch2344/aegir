@@ -59,8 +59,7 @@ describe('Seed Invariants — Adversarial QA', () => {
         } } } } }`,
       },
     })
-    const paths = response.json().data.practices.context.files.search.results
-      .map((f: any) => f.path)
+    const paths = response.json().data.practices.context.files.search.results.map((f: any) => f.path)
     expect(paths).toContain('global/operating-model.md')
     expect(paths).toContain('global/coding-standards.md')
     expect(paths).toContain('global/lifecycle.md')
@@ -76,8 +75,7 @@ describe('Seed Invariants — Adversarial QA', () => {
         } } } } }`,
       },
     })
-    const paths = response.json().data.practices.context.files.search.results
-      .map((f: any) => f.path)
+    const paths = response.json().data.practices.context.files.search.results.map((f: any) => f.path)
     expect(paths).toContain('project/conventions.md')
     expect(paths).toContain('project/domain-context.md')
   })
@@ -95,8 +93,11 @@ describe('Seed Invariants — Adversarial QA', () => {
     const results = response.json().data.practices.context.files.search.results
     // Filter to known seed paths only — parallel mutation tests may create temp files
     const seedPaths = [
-      'global/operating-model.md', 'global/coding-standards.md', 'global/lifecycle.md',
-      'project/conventions.md', 'project/domain-context.md',
+      'global/operating-model.md',
+      'global/coding-standards.md',
+      'global/lifecycle.md',
+      'project/conventions.md',
+      'project/domain-context.md',
     ]
     const seeded = results.filter((f: any) => seedPaths.includes(f.path))
     for (const file of seeded) {
@@ -131,8 +132,7 @@ describe('Seed Invariants — Adversarial QA', () => {
         } } } } }`,
       },
     })
-    const topicIds = response.json().data.practices.context.topics.search.results
-      .map((t: any) => t.topicId)
+    const topicIds = response.json().data.practices.context.topics.search.results.map((t: any) => t.topicId)
     expect(topicIds).toContain('graphql')
     expect(topicIds).toContain('kafka')
     expect(topicIds).toContain('conductor')
@@ -183,8 +183,7 @@ describe('Seed Invariants — Adversarial QA', () => {
         } } } } }`,
       },
     })
-    const categoryIds = response.json().data.practices.bcp.categories.search.results
-      .map((c: any) => c.categoryId)
+    const categoryIds = response.json().data.practices.bcp.categories.search.results.map((c: any) => c.categoryId)
     expect(categoryIds).toContain('architecture')
     expect(categoryIds).toContain('api-design')
     expect(categoryIds).toContain('data')
@@ -203,8 +202,9 @@ describe('Seed Invariants — Adversarial QA', () => {
         } } } } }`,
       },
     })
-    const testingCat = response.json().data.practices.bcp.categories.search.results
-      .find((c: any) => c.categoryId === 'testing')
+    const testingCat = response
+      .json()
+      .data.practices.bcp.categories.search.results.find((c: any) => c.categoryId === 'testing')
     expect(testingCat).toBeDefined()
     expect(testingCat.entries).toHaveLength(6)
 
@@ -227,8 +227,9 @@ describe('Seed Invariants — Adversarial QA', () => {
         } } } } }`,
       },
     })
-    const testingCat = response.json().data.practices.bcp.categories.search.results
-      .find((c: any) => c.categoryId === 'testing')
+    const testingCat = response
+      .json()
+      .data.practices.bcp.categories.search.results.find((c: any) => c.categoryId === 'testing')
     for (const entry of testingCat.entries) {
       expect(entry.content, `${entry.entryId} should have content`).toBeTruthy()
       expect(entry.content.length, `${entry.entryId} content should be substantial`).toBeGreaterThan(100)

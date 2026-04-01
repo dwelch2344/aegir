@@ -8,9 +8,7 @@
   "remoteUser": "node",
   "updateRemoteUserUID": true,
   "initializeCommand": "mkdir -p ~/.devcontainers/mount/aegir/secrets ~/.devcontainers/mount/aegir/claude ~/.config/gh",
-  "mounts": [
-    "source=../../,target=//projects,type=bind"
-  ],
+  "mounts": ["source=../../,target=//projects,type=bind"],
   "forwardPorts": [7356],
   "containerEnv": {
     "POD_NAME": "local",

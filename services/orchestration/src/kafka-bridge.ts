@@ -56,11 +56,15 @@ export async function startKafkaBridge(signal: AbortSignal): Promise<void> {
 }
 
 async function handleChatStart(cmd: Extract<AgentChatCommand, { type: 'chat.start' }>) {
-  const workflowId = await startWorkflow('agent_chat_message', {
-    conversationId: cmd.conversationId,
-    projectId: cmd.projectId ?? null,
-    text: cmd.text,
-  }, 2)
+  const workflowId = await startWorkflow(
+    'agent_chat_message',
+    {
+      conversationId: cmd.conversationId,
+      projectId: cmd.projectId ?? null,
+      text: cmd.text,
+    },
+    2,
+  )
 
   // Publish confirmation event back to agents service
   const event: ChatWorkflowStartedEvent = {

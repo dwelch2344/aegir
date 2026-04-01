@@ -210,7 +210,8 @@ describe('Mutation Attacks — Adversarial QA', () => {
       method: 'POST',
       url: '/graphql',
       payload: {
-        query: '{ practices { bcp { categories { search(input: { organizationId: 1 }) { results { id categoryId } } } } } }',
+        query:
+          '{ practices { bcp { categories { search(input: { organizationId: 1 }) { results { id categoryId } } } } } }',
       },
     })
     const catId = catRes.json().data.practices.bcp.categories.search.results[0].id

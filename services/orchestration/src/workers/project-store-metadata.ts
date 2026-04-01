@@ -35,39 +35,51 @@ export async function handleProjectStoreMetadata(task: any): Promise<TaskResult>
     const gqlUrl = config.projects.graphqlUrl
 
     // Update project with manifest data and local path
-    await checkedGqlFetch(gqlUrl, {
-      query: `mutation($id: ID!, $input: ProjectsProjectUpdateInput!) {
+    await checkedGqlFetch(
+      gqlUrl,
+      {
+        query: `mutation($id: ID!, $input: ProjectsProjectUpdateInput!) {
         projects { projects { update(id: $id, input: $input) { id } } }
       }`,
-      variables: {
-        id: projectId,
-        input: {
-          localPath,
-          manifestRaw,
-          status: 'READY',
-          lastSyncedAt: new Date().toISOString(),
+        variables: {
+          id: projectId,
+          input: {
+            localPath,
+            manifestRaw,
+            status: 'READY',
+            lastSyncedAt: new Date().toISOString(),
+          },
         },
       },
-    }, 'Update project status')
+      'Update project status',
+    )
 
     // Persist services
     if (services?.length) {
-      await checkedGqlFetch(gqlUrl, {
-        query: `mutation($projectId: ID!, $services: [ProjectsServiceInput!]!) {
+      await checkedGqlFetch(
+        gqlUrl,
+        {
+          query: `mutation($projectId: ID!, $services: [ProjectsServiceInput!]!) {
           projects { projects { replaceServices(projectId: $projectId, services: $services) } }
         }`,
-        variables: { projectId, services },
-      }, 'Replace services')
+          variables: { projectId, services },
+        },
+        'Replace services',
+      )
     }
 
     // Persist patterns
     if (patterns?.length) {
-      await checkedGqlFetch(gqlUrl, {
-        query: `mutation($projectId: ID!, $patterns: [ProjectsPatternInput!]!) {
+      await checkedGqlFetch(
+        gqlUrl,
+        {
+          query: `mutation($projectId: ID!, $patterns: [ProjectsPatternInput!]!) {
           projects { projects { replacePatterns(projectId: $projectId, patterns: $patterns) } }
         }`,
-        variables: { projectId, patterns },
-      }, 'Replace patterns')
+          variables: { projectId, patterns },
+        },
+        'Replace patterns',
+      )
     }
 
     await logProjectActivity({

@@ -111,11 +111,15 @@ export async function buildApp() {
       br = project.branch
     }
 
-    const workflowId = await startWorkflow('project_sync', {
-      projectId,
-      repoUrl: url,
-      branch: br ?? 'main',
-    }, 2)
+    const workflowId = await startWorkflow(
+      'project_sync',
+      {
+        projectId,
+        repoUrl: url,
+        branch: br ?? 'main',
+      },
+      2,
+    )
     return { workflowId }
   })
 
@@ -125,11 +129,15 @@ export async function buildApp() {
     async (req) => {
       const { conversationId, text, projectId } = req.body
 
-      const workflowId = await startWorkflow('agent_chat_message', {
-        conversationId,
-        text,
-        projectId: projectId ?? null,
-      }, 2)
+      const workflowId = await startWorkflow(
+        'agent_chat_message',
+        {
+          conversationId,
+          text,
+          projectId: projectId ?? null,
+        },
+        2,
+      )
       return { workflowId }
     },
   )
