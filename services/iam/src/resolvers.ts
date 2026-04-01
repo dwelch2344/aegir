@@ -2,7 +2,7 @@ import type { ResolverMap } from '@moribashi/graphql'
 import mercurius from 'mercurius'
 import type IdentitiesService from './identities/identities.svc.js'
 import type MembershipsService from './memberships/memberships.svc.js'
-import type OrgRelationshipsService from './org-relationships/org-relationships.svc.js'
+import type OrgRelationshipsService from './org-relationships/orgRelationships.svc.js'
 import type OrganizationsService from './organizations/organizations.svc.js'
 import type RolesService from './roles/roles.svc.js'
 
@@ -63,7 +63,39 @@ export const resolvers: ResolverMap<RequestCradle> = {
     orgRelationships: () => ({}),
   },
   IamIdentitiesOps: {
-    _placeholder: () => null,
+    async sync(
+      this: RequestCradle,
+      _: unknown,
+      args: { input: { keycloakId: string; label: string; email: string }[] },
+    ) {
+      return this.identitiesService.sync(args.input)
+    },
+    async bootstrap(
+      this: RequestCradle,
+      _: unknown,
+      args: { input: { keycloakId: string; label: string; email: string } },
+    ) {
+      // 1. Sync the identity
+      const synced = await this.identitiesService.sync([args.input])
+      const identity = synced[0]
+      if (!identity) throw new Error('Failed to sync identity')
+
+      // 2. Check if system org (id=1) has any members
+      const { results: systemMembers } = await this.membershipsService.search({ organizationIdIn: [1] })
+      const isFirstUser = systemMembers.length === 0
+
+      let systemMembership = null
+      if (isFirstUser) {
+        // 3. First user: create membership to system org with Owner role (id=1)
+        systemMembership = await this.membershipsService.create({
+          identityId: identity.id,
+          organizationId: 1,
+          roleIds: [1], // Owner
+        })
+      }
+
+      return { identity, isFirstUser, systemMembership }
+    },
   },
   IamOrganizationsOps: {
     async sync(this: RequestCradle, _: unknown, args: { input: { keycloakId: string; key: string; name: string }[] }) {

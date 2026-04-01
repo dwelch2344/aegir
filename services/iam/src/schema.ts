@@ -10,6 +10,7 @@ export const typeDefs = `
     type: IdentityType!
     label: String!
     email: String!
+    keycloakId: String
     organizationId: Int
     memberships: [Membership!]!
   }
@@ -65,6 +66,7 @@ export const typeDefs = `
   input IamIdentitySearchInput {
     idIn: [Int!]
     labelLike: String
+    emailLike: String
   }
 
   type IamIdentities {
@@ -137,8 +139,22 @@ export const typeDefs = `
 
   # --- Mutations ---
 
+  input IamIdentitySyncInput {
+    keycloakId: String!
+    label: String!
+    email: String!
+  }
+
+  type BootstrapResult {
+    identity: Identity!
+    isFirstUser: Boolean!
+    systemMembership: Membership
+  }
+
   type IamIdentitiesOps {
-    _placeholder: String
+    sync(input: [IamIdentitySyncInput!]!): [Identity!]!
+    """ Sync a single identity and auto-bootstrap as system org Owner if first user """
+    bootstrap(input: IamIdentitySyncInput!): BootstrapResult!
   }
 
   input IamOrganizationSyncInput {

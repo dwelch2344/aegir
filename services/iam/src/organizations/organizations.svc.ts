@@ -40,7 +40,8 @@ export default class OrganizationsService {
     return { results }
   }
 
-  /** Upsert organizations from Keycloak. Matches on keycloak_id or key, inserts if new. Skips protected orgs. */
+  /** Upsert organizations from Keycloak. Matches on keycloak_id or key, inserts if new. Skips protected orgs.
+   *  Auto-creates SELF + SYS_CHILD relationships for new orgs. */
   async sync(inputs: { keycloakId: string; key: string; name: string }[]) {
     const results: { id: number; key: string; name: string; keycloakId: string | null }[] = []
 
@@ -58,6 +59,7 @@ export default class OrganizationsService {
         { keycloakId: input.keycloakId, key: input.key, name: input.name },
       )
       if (claimed[0]) {
+        await this.ensureRelationships(claimed[0].id)
         results.push(claimed[0])
         continue
       }
@@ -75,9 +77,32 @@ export default class OrganizationsService {
          RETURNING id, key, name, keycloak_id`,
         { keycloakId: input.keycloakId, key: input.key, name: input.name },
       )
-      if (rows[0]) results.push(rows[0])
+      if (rows[0]) {
+        await this.ensureRelationships(rows[0].id)
+        results.push(rows[0])
+      }
     }
 
     return results
+  }
+
+  /** Ensure an org has SELF + SYS_CHILD (from system org) relationships */
+  private async ensureRelationships(orgId: number) {
+    // SELF relationship
+    await this.db.query(
+      `INSERT INTO org_relationship (owner_org_id, related_org_id, relationship_type)
+       VALUES (:orgId, :orgId, 'SELF')
+       ON CONFLICT (owner_org_id, related_org_id, relationship_type) DO NOTHING`,
+      { orgId },
+    )
+    // SYS_CHILD: system org (id=1) is parent of this org (skip for system org itself)
+    if (orgId !== 1) {
+      await this.db.query(
+        `INSERT INTO org_relationship (owner_org_id, related_org_id, relationship_type)
+         VALUES (:orgId, 1, 'SYS_CHILD')
+         ON CONFLICT (owner_org_id, related_org_id, relationship_type) DO NOTHING`,
+        { orgId },
+      )
+    }
   }
 }

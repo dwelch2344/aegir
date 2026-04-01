@@ -35,6 +35,15 @@ export default class MembershipsService {
   }
 
   async create(input: { identityId: number; organizationId: number; roleIds?: number[] }) {
+    // Enforce owner limit: max 2 orgs where identity holds the Owner role
+    const ownerRoleId = 1 // Owner role is always id=1
+    if (input.roleIds?.includes(ownerRoleId)) {
+      const ownerCount = await this.countOwnerMemberships(input.identityId)
+      if (ownerCount >= 2) {
+        throw new Error('An identity can be Owner of at most 2 organizations')
+      }
+    }
+
     const rows = await this.db.query<{
       id: number
       identityId: number
@@ -83,6 +92,22 @@ export default class MembershipsService {
   }
 
   async assignRole(membershipId: number, roleId: number) {
+    // Enforce owner limit when assigning Owner role
+    const ownerRoleId = 1
+    if (roleId === ownerRoleId) {
+      // Look up the identity for this membership
+      const mship = await this.db.query<{ identityId: number }>(
+        `SELECT identity_id FROM membership WHERE id = :membershipId`,
+        { membershipId },
+      )
+      if (mship[0]) {
+        const ownerCount = await this.countOwnerMemberships(mship[0].identityId)
+        if (ownerCount >= 2) {
+          throw new Error('An identity can be Owner of at most 2 organizations')
+        }
+      }
+    }
+
     await this.db.query(
       `INSERT INTO membership_role (membership_id, role_id) VALUES (:membershipId, :roleId)
        ON CONFLICT (membership_id, role_id) DO NOTHING`,
@@ -98,5 +123,17 @@ export default class MembershipsService {
       { membershipId, roleId },
     )
     return rows.length > 0
+  }
+
+  /** Count how many orgs this identity holds the Owner role in */
+  private async countOwnerMemberships(identityId: number): Promise<number> {
+    const rows = await this.db.query<{ count: string }>(
+      `SELECT COUNT(*) as count
+       FROM membership m
+       JOIN membership_role mr ON mr.membership_id = m.id
+       WHERE m.identity_id = :identityId AND mr.role_id = 1`,
+      { identityId },
+    )
+    return parseInt(rows[0]?.count ?? '0', 10)
   }
 }

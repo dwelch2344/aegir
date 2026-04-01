@@ -37,12 +37,12 @@ Tenant
  ├── Organization (many)
  │    └── Membership (many)
  │         ├── → Identity
- │         └── → Role[] (Admin, Member, domain-specific)
+ │         └── → Role[] (Owner, Admin, Member, domain-specific)
  └── TenantIntegration (many)
       └── → Integration
 ```
 
-- **Identity ↔ Organization** — mediated by **Membership**. An Identity can be a member of multiple Organizations. Each Membership carries **Role assignments** (Admin and Member are defaults; additional roles are defined as domains require).
+- **Identity ↔ Organization** — mediated by **Membership**. An Identity can be a member of multiple Organizations. Each Membership carries **Role assignments** (Owner, Admin, and Member are the three default roles; additional roles are defined as domains require).
 - **Organization → Tenant** — every Organization exists within a Tenant.
 - **TenantIntegration → Tenant** — each TenantIntegration belongs to exactly one Tenant.
 - **TenantIntegration → Integration** — each TenantIntegration references exactly one Integration.
@@ -79,16 +79,18 @@ One tenant representing the ship itself. Key matches the project name (e.g., `ae
 
 ### Organizations (IAM service)
 
-| id  | key         | name           | protected | Purpose                                                                                                                                       |
-| --- | ----------- | -------------- | --------- | --------------------------------------------------------------------------------------------------------------------------------------------- |
-| 1   | `system`    | System         | `true`    | Platform-level concerns. Cannot be modified or deleted via normal APIs. Owns the SUPER_USER identity and any platform-level service accounts. |
-| 2   | `{project}` | {Project Name} | `false`   | The operator's own organization. First "real" org in the system.                                                                              |
+| id  | key      | name   | protected | Purpose                                                                                                                                       |
+| --- | -------- | ------ | --------- | --------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1   | `system` | System | `true`    | Platform-level concerns. Cannot be modified or deleted via normal APIs. Owns the SUPER_USER identity and any platform-level service accounts. |
+
+The V1.0.0 baseline migration seeds only the System organization. Additional organizations (the operator's own org, customer orgs, etc.) are created at runtime via Keycloak sync or direct API operations. There is no hardcoded "project org" in the seed data.
 
 The **System organization** is special:
 
 - `protected = true` — sync and mutation operations skip it
 - Stable id (1) and key (`system`) across all ships
 - Used for platform-internal actors and configuration that should never be scoped to a customer
+- The first user to log in is auto-bootstrapped as **Owner** of the System org, establishing initial platform administration
 
 ### Identity (IAM service)
 
@@ -112,16 +114,14 @@ Seed integrations represent the platform's own infrastructure dependencies (e.g.
 
 ## Implementation Status
 
-_Last audited: 2026-03-13. See [domain-model-audit.md](domain-model-audit.md) for full details._
+_Last audited: 2026-04-01. See [domain-model-audit.md](domain-model-audit.md) for full details._
 
 ### Identity
 - **Service:** IAM (`services/iam`)
 - **DB Table:** `identity`
 - **Status:** Partially Implemented
 - **Deviations:**
-  - `organization_id` is a direct FK to `organization` — design specifies this should be mediated by a Membership entity (not yet implemented)
-  - No UNIQUE constraint on `email` (only an index)
-  - No CHECK constraint on `type` enum at DB level
+  - `organization_id` is a direct FK to `organization` — legacy column; the canonical relationship is now via the Membership entity
   - No create/update/delete mutations — only search queries are available
 
 ### Organization
@@ -161,17 +161,17 @@ _Last audited: 2026-03-13. See [domain-model-audit.md](domain-model-audit.md) fo
   - No CHECK constraint on `status` enum at DB level
   - No delete mutation
 
-### Membership (Not Implemented)
-- **Service:** Would be IAM (`services/iam`)
-- **DB Table:** Does not exist
-- **Status:** Not Implemented
-- **Notes:** Documented as the mediating entity between Identity and Organization with role assignments. Currently replaced by a direct `organization_id` FK on `identity`.
+### Membership
+- **Service:** IAM (`services/iam`)
+- **DB Tables:** `membership`, `membership_role`
+- **Status:** Implemented (V1.0.0 baseline)
+- **Notes:** Mediates the Identity-Organization relationship with role assignments. Each membership links an identity to an organization (unique pair). Roles are assigned via the `membership_role` join table. The `identity.organization_id` FK still exists as a legacy column but membership is the canonical relationship.
 
-### Roles & Permissions / ReBAC (Not Implemented)
-- **Service:** Would be IAM (`services/iam`)
-- **DB Tables:** None exist (`org_relationship`, `role`, `role_permission`)
-- **Status:** Not Implemented
-- **Notes:** Full ReBAC model is documented in design (OrgRelationship, Role, RolePermission) but no implementation exists.
+### Roles & Permissions / ReBAC
+- **Service:** IAM (`services/iam`)
+- **DB Tables:** `role`, `role_permission`, `org_relationship`
+- **Status:** Implemented (V1.0.0 baseline)
+- **Notes:** Full ReBAC model is implemented. Three default roles seeded: Owner, Admin, Member. Permissions are scoped by relationship type (SELF, SYS_CHILD). The System org has a SELF relationship, and child orgs get a SYS_CHILD relationship to the System org, enabling system-wide Owner permissions to cascade.
 
 ---
 
@@ -181,7 +181,7 @@ Access control is **Relationship-Based** (ReBAC). Permissions are never assigned
 
 ### Core Concepts
 
-**OrgRelationship** — a directed edge between two organizations: an **owner org** and a **related org**, connected by a **relationship type** (a string, e.g., `SELF`, `SUBSCRIBER`, `SUBSIDIARY`). Every organization has a `SELF` relationship with itself. Relationships are **transitive** — if AcmeCorp owns a `SUBSIDIARY` relationship to AcmeCorp US, and AcmeCorp US owns a `SUBSIDIARY` relationship to AcmeCorp US East, the chain resolves.
+**OrgRelationship** — a directed edge between two organizations: an **owner org** and a **related org**, connected by a **relationship type** (a string, e.g., `SELF`, `SYS_CHILD`, `SUBSCRIBER`, `SUBSIDIARY`). Every organization has a `SELF` relationship with itself. The `SYS_CHILD` relationship type connects child organizations to the System org, enabling system-level Owner roles to manage all child orgs through the standard ReBAC resolution. Relationships are **transitive** — if AcmeCorp owns a `SUBSIDIARY` relationship to AcmeCorp US, and AcmeCorp US owns a `SUBSIDIARY` relationship to AcmeCorp US East, the chain resolves.
 
 **Role** — assigned to an Identity at a specific Organization via Membership. A Role is a named bundle of **(Permission, RelationshipType)** pairs. The relationship type determines _where_ the permission applies, not just _what_ it grants.
 
