@@ -1,6 +1,6 @@
 # Domain Model Audit
 
-**Date:** 2026-03-13
+**Date:** 2026-04-01 (updated), originally 2026-03-13
 **Scope:** All five federated root entities defined in the foundational domain model
 
 ---
@@ -33,8 +33,8 @@
 | NOT NULL (type)           | Yes    | Default `'USER'`                                             |
 | NOT NULL (label)          | Yes    |                                                              |
 | NOT NULL (email)          | Yes    |                                                              |
-| UNIQUE (email)            | **No** | Only an INDEX exists — allows duplicate emails               |
-| CHECK (type enum)         | **No** | No DB-level enforcement of `USER/SUPER_USER/SERVICE_ACCOUNT` |
+| UNIQUE (email)            | Yes    | Added in V1.0.0 baseline                                     |
+| CHECK (type enum)         | Yes    | `CHECK (type IN ('USER', 'SUPER_USER', 'SERVICE_ACCOUNT'))` — added in V1.0.0 baseline |
 | Index (email)             | Yes    | `idx_identity_email`                                         |
 | Index (organization_id)   | Yes    | `idx_identity_organization_id`                               |
 
@@ -76,8 +76,8 @@ Search/query is functional. No create/update/delete mutations exist for Identity
 | id          | Yes        | `number`                        | `SERIAL PK`               | `Int!`        | Aligned   |
 | key         | Yes        | `string`                        | `VARCHAR(100) NOT NULL UNIQUE` | `String!` | Aligned   |
 | name        | Yes        | `string`                        | `VARCHAR(255) NOT NULL`    | `String!`     | Aligned   |
-| keycloakId  | Not in doc | `string?` (optional)            | `VARCHAR(255) UNIQUE` (V0.0.4) | `String` | Implementation-only |
-| protected   | Yes        | `boolean`                       | `BOOLEAN NOT NULL DEFAULT false` (V0.0.5) | `Boolean!` | Aligned |
+| keycloakId  | Not in doc | `string?` (optional)            | `VARCHAR(255) UNIQUE`            | `String` | Implementation-only |
+| protected   | Yes        | `boolean`                       | `BOOLEAN NOT NULL DEFAULT false`  | `Boolean!` | Aligned |
 | created_at  | No         | Not modeled                     | `TIMESTAMPTZ NOT NULL DEFAULT now()` | Not exposed | DB-only |
 | updated_at  | No         | Not modeled                     | `TIMESTAMPTZ NOT NULL DEFAULT now()` | Not exposed | DB-only |
 
@@ -87,7 +87,7 @@ Search/query is functional. No create/update/delete mutations exist for Identity
 | ------------------------- | ------ | ------------------------------------------ |
 | Primary Key (id)          | Yes    | SERIAL                                     |
 | UNIQUE (key)              | Yes    |                                            |
-| UNIQUE (keycloak_id)      | Yes    | Added in V0.0.4                            |
+| UNIQUE (keycloak_id)      | Yes    |                                            |
 | NOT NULL (key)            | Yes    |                                            |
 | NOT NULL (name)           | Yes    |                                            |
 | NOT NULL (protected)      | Yes    | Default `false`                            |
@@ -111,7 +111,7 @@ Search/query is functional. No create/update/delete mutations exist for Identity
 
 - Search all organizations: covered
 - Filter by `idIn`, `keyLike`: covered
-- Seed validation (system org protected, aegir org): covered
+- Seed validation (system org protected): covered
 - Sync mutation (create, idempotency, empty array, skip protected): covered
 - Protected flag queryable: covered
 - **Gaps:** No direct CRUD mutations. No tests for `nameLike` or `keycloakIdIn` search filters.
@@ -269,17 +269,13 @@ Core CRUD (minus delete) is present. Querying and nested integration access work
 
 ---
 
-## Missing Entities
+## Previously Missing Entities (Now Implemented)
 
 ### Membership
 
 **Design status:** Documented in domain model as the mediating entity between Identity and Organization.
 
-**Implementation status:** Not implemented. The current implementation uses a direct `organization_id` FK on the `identity` table, which limits an identity to a single organization. The design specifies that Membership should mediate this relationship, allowing an identity to belong to multiple organizations with role assignments.
-
-The test file explicitly marks this as a known gap:
-- `it.todo('Identity-Organization relationship should be mediated by Membership')`
-- `it.todo('Identity can belong to multiple organizations through Membership')`
+**Implementation status:** Implemented in V1.0.0 baseline. The `membership` table mediates Identity-Organization relationships, allowing an identity to belong to multiple organizations. The `membership_role` join table assigns roles to each membership. The legacy `identity.organization_id` FK still exists but the canonical relationship is now via Membership.
 
 **Keycloak note:** Organization membership is partially externalized to Keycloak (evidenced by the `keycloak_id` column on organization and the sync mutation). The boundary between Keycloak-managed membership and platform-managed membership needs clarification.
 
@@ -287,10 +283,7 @@ The test file explicitly marks this as a known gap:
 
 **Design status:** Fully documented in the domain model with a relationship-based access control (ReBAC) model including OrgRelationship, Role, RolePermission, and Membership.
 
-**Implementation status:** Not implemented. No database tables, no GraphQL schema, no service code.
-
-The test file marks this as a known gap:
-- `it.todo('Roles and permissions should be defined on Membership')`
+**Implementation status:** Implemented in V1.0.0 baseline. DB tables `role`, `role_permission`, `org_relationship`, `membership`, and `membership_role` all exist. Three default roles are seeded: Owner (full SELF + SYS_CHILD permissions), Admin (org management SELF permissions), and Member (read-only SELF permissions). The System org has a SELF relationship; child orgs receive a SYS_CHILD relationship to enable system-wide administration. The first user to log in is auto-bootstrapped as Owner of the System org.
 
 ---
 
@@ -299,8 +292,8 @@ The test file marks this as a known gap:
 | Relationship                      | Design                                      | Implementation                            | Status |
 | --------------------------------- | ------------------------------------------- | ----------------------------------------- | ------ |
 | Tenant → Organization (1:many)    | Every Organization exists within a Tenant   | **No FK exists** — Organization table has no `tenant_id` column. Services are separate (IAM vs System) which creates a cross-service boundary. | Gap |
-| Identity → Organization           | Mediated by Membership (many-to-many)       | **Direct FK** — `identity.organization_id` references `organization(id)`. This is a 1:many relationship, not many-to-many as designed. | Deviation |
-| Organization → Membership         | One Organization has many Memberships       | **Not implemented** — No membership table exists | Gap |
+| Identity → Organization           | Mediated by Membership (many-to-many)       | **Membership table implemented** — `membership(identity_id, organization_id)` with unique constraint. Legacy `identity.organization_id` FK still exists. | Aligned (with legacy column) |
+| Organization → Membership         | One Organization has many Memberships       | **Implemented** — `membership` table with FK to `organization(id)`, indexed by `organization_id` | Aligned |
 | TenantIntegration → Tenant        | Each TenantIntegration belongs to one Tenant| **Properly enforced** — FK `tenant_id → tenant(id)` with composite PK | Aligned |
 | TenantIntegration → Integration   | Each TenantIntegration references one Integration | **Properly enforced** — FK `integration_id → integration(id)` with composite PK | Aligned |
 
@@ -314,9 +307,9 @@ The `it.todo('Organization should have a tenant_id foreign key')` test stub sugg
 
 ## Data Integrity Gaps
 
-### 1. identity.email — No UNIQUE Constraint
+### 1. ~~identity.email — No UNIQUE Constraint~~ RESOLVED
 
-The `email` column has an INDEX (`idx_identity_email`) for query performance but no UNIQUE constraint. Multiple identities can share the same email address. Depending on business requirements, this may or may not be intentional — needs clarification.
+The `email` column now has a UNIQUE constraint (added in V1.0.0 baseline).
 
 ### 2. metadata Columns Use TEXT Instead of JSONB
 
@@ -325,9 +318,9 @@ Both `integration.metadata` and `tenant_integration.metadata` columns use `TEXT`
 - Enable JSON-specific query operators
 - Provide more efficient storage and indexing
 
-### 3. No CHECK Constraint on identity.type Enum
+### 3. ~~No CHECK Constraint on identity.type Enum~~ RESOLVED
 
-The `type` column is `VARCHAR(50)` with no CHECK constraint. Any string value can be inserted. The valid values (`USER`, `SUPER_USER`, `SERVICE_ACCOUNT`) are only enforced at the GraphQL layer via the `IdentityType` enum.
+The `type` column now has `CHECK (type IN ('USER', 'SUPER_USER', 'SERVICE_ACCOUNT'))` (added in V1.0.0 baseline).
 
 ### 4. No CHECK Constraint on tenant_integration.status Enum
 
@@ -349,15 +342,13 @@ Prioritized list of improvements:
 
 ### P0 — Critical (Data Integrity)
 
-1. **Add UNIQUE constraint on `identity.email`** — If email uniqueness is a business requirement (likely for login), add `ALTER TABLE identity ADD CONSTRAINT uq_identity_email UNIQUE (email)`. If not required, document the decision.
+1. ~~**Add UNIQUE constraint on `identity.email`**~~ — **DONE** (V1.0.0 baseline).
 
-2. **Add CHECK constraints for enum columns** — Prevent invalid data at the DB level:
-   - `ALTER TABLE identity ADD CONSTRAINT chk_identity_type CHECK (type IN ('USER', 'SUPER_USER', 'SERVICE_ACCOUNT'))`
-   - `ALTER TABLE tenant_integration ADD CONSTRAINT chk_ti_status CHECK (status IN ('ACTIVE', 'INACTIVE', 'PENDING', 'ERROR', 'SUSPENDED'))`
+2. ~~**Add CHECK constraints for enum columns**~~ — **DONE** for `identity.type` (V1.0.0 baseline). Still needed for `tenant_integration.status`.
 
 ### P1 — High (Design Alignment)
 
-3. **Implement Membership entity** — Replace direct `identity.organization_id` FK with a `membership` table (`identity_id`, `organization_id`, `roles[]`). This is the most significant gap between design and implementation.
+3. ~~**Implement Membership entity**~~ — **DONE** (V1.0.0 baseline). `membership` and `membership_role` tables exist. Legacy `identity.organization_id` FK remains but is no longer the canonical relationship.
 
 4. **Add `tenant_id` to Organization** — Either as a DB column (if co-located) or as an application-level field with eventual consistency. The Tenant-Organization relationship is fundamental to the domain model.
 

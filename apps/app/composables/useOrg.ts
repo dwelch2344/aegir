@@ -35,58 +35,79 @@ export function useOrg() {
     loading.value = true
     try {
       const config = useRuntimeConfig()
-      // Server-side: use internal service URL; client-side: use public (via reverse proxy)
       const gatewayUrl = import.meta.server ? (config.gatewayUrl as string) : (config.public.gatewayUrl as string)
 
-      // 1. Get user's Keycloak orgs (membership source of truth)
+      // 1. Get user's Keycloak orgs
       const headers = import.meta.server ? useRequestHeaders(['cookie']) : undefined
       const kcOrgs = await $fetch<KeycloakOrg[]>('/api/orgs', { headers })
 
-      if (!kcOrgs.length) {
-        orgs.value = []
-        activeOrgId.value = null
-        loaded.value = true
-        return
+      // 2. Bootstrap identity (always — creates system org membership if first user)
+      let identityId: number | null = null
+      try {
+        const bootstrapResult = await $fetch<{
+          identity: { id: number }
+          isFirstUser: boolean
+        }>('/api/iam/bootstrap', { method: 'POST', headers })
+        identityId = bootstrapResult.identity.id
+      } catch (bootstrapErr) {
+        logger.error('Failed to bootstrap identity', bootstrapErr)
       }
 
-      // 2. Sync Keycloak orgs into IAM (upsert by keycloakId)
-      const syncInput = kcOrgs.map((kc) => ({
-        keycloakId: kc.id,
-        key: kc.name
-          .toLowerCase()
-          .replace(/[^a-z0-9]+/g, '-')
-          .replace(/^-|-$/g, ''),
-        name: kc.name,
-      }))
+      // 3. Sync Keycloak orgs into IAM (if any)
+      if (kcOrgs.length) {
+        const syncInput = kcOrgs.map((kc) => ({
+          keycloakId: kc.id,
+          key: kc.name
+            .toLowerCase()
+            .replace(/[^a-z0-9]+/g, '-')
+            .replace(/^-|-$/g, ''),
+          name: kc.name,
+        }))
 
-      const response = await fetch(gatewayUrl, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          query: `mutation SyncOrgs($input: [IamOrganizationSyncInput!]!) {
-            iam { orgs { sync(input: $input) { id key name keycloakId } } }
-          }`,
-          variables: { input: syncInput },
-        }),
-      })
-      const json = (await response.json()) as {
-        data?: { iam: { orgs: { sync: Org[] } } }
-        errors?: { message: string }[]
-      }
+        const response = await fetch(gatewayUrl, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            query: `mutation SyncOrgs($input: [IamOrganizationSyncInput!]!) {
+              iam { orgs { sync(input: $input) { id key name keycloakId } } }
+            }`,
+            variables: { input: syncInput },
+          }),
+        })
+        const json = (await response.json()) as {
+          data?: { iam: { orgs: { sync: Org[] } } }
+          errors?: { message: string }[]
+        }
 
-      if (json.errors?.length) {
-        logger.error('Failed to sync orgs to IAM', json.errors)
-        // Fallback: try to query existing orgs by keycloak IDs
-        const fallback = await fetchOrgsByKeycloakIds(
-          gatewayUrl,
-          kcOrgs.map((o) => o.id),
-        )
-        orgs.value = fallback
+        if (json.errors?.length) {
+          logger.error('Failed to sync orgs to IAM', json.errors)
+          orgs.value = await fetchOrgsByKeycloakIds(
+            gatewayUrl,
+            kcOrgs.map((o) => o.id),
+          )
+        } else {
+          orgs.value = json.data!.iam.orgs.sync
+        }
       } else {
-        orgs.value = json.data!.iam.orgs.sync
+        orgs.value = []
       }
 
-      // Restore persisted selection or pick first
+      // 4. Merge IAM membership orgs (system org + any non-Keycloak orgs)
+      if (identityId) {
+        try {
+          const membershipOrgIds = await fetchMembershipOrgIds(gatewayUrl, identityId)
+          const existingIds = new Set(orgs.value.map((o) => o.id))
+          const missingIds = membershipOrgIds.filter((id) => !existingIds.has(id))
+          if (missingIds.length > 0) {
+            const iamOnlyOrgs = await fetchOrgsByIds(gatewayUrl, missingIds)
+            orgs.value = [...orgs.value, ...iamOnlyOrgs]
+          }
+        } catch (mergeErr) {
+          logger.error('Failed to merge IAM membership orgs', mergeErr)
+        }
+      }
+
+      // 5. Set active org selection
       if (!activeOrgId.value || !orgs.value.find((o) => o.id === activeOrgId.value)) {
         if (orgs.value.length > 0) {
           activeOrgId.value = orgs.value[0].id
@@ -154,4 +175,37 @@ async function fetchOrgsByKeycloakIds(gatewayUrl: string, keycloakIds: string[])
   } catch {
     return []
   }
+}
+
+/** Fetch all org IDs where this identity has memberships */
+async function fetchMembershipOrgIds(gatewayUrl: string, identityId: number): Promise<number[]> {
+  const response = await fetch(gatewayUrl, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      query: `query($input: IamMembershipSearchInput!) {
+        iam { memberships { search(input: $input) { results { organizationId } } } }
+      }`,
+      variables: { input: { identityIdIn: [identityId] } },
+    }),
+  })
+  const json = (await response.json()) as any
+  const results = json.data?.iam?.memberships?.search?.results ?? []
+  return [...new Set(results.map((m: any) => m.organizationId as number))]
+}
+
+/** Fetch orgs by their IAM IDs */
+async function fetchOrgsByIds(gatewayUrl: string, orgIds: number[]): Promise<Org[]> {
+  const response = await fetch(gatewayUrl, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      query: `query($input: IamOrganizationSearchInput!) {
+        iam { orgs { search(input: $input) { results { id key name keycloakId } } } }
+      }`,
+      variables: { input: { idIn: orgIds } },
+    }),
+  })
+  const json = (await response.json()) as any
+  return json.data?.iam?.orgs?.search?.results ?? []
 }

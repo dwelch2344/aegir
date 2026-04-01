@@ -1,1 +1,0 @@
-ALTER TABLE organization ADD COLUMN protected BOOLEAN NOT NULL DEFAULT false;

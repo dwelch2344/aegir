@@ -64,8 +64,16 @@ async function load() {
     org.value = orgData
     members.value = membersData
 
-    // Load IAM data if we have the IAM org
+    // Sync Keycloak members into IAM identities + memberships, then load IAM data
     if (iamOrg.value) {
+      try {
+        await $fetch(`/api/orgs/${orgId}/members/sync`, {
+          method: 'POST',
+          body: { iamOrgId: iamOrg.value.id },
+        })
+      } catch (syncErr: any) {
+        console.warn('Failed to sync members from Keycloak', syncErr)
+      }
       try {
         await loadIamData()
       } catch (iamErr: any) {
@@ -94,13 +102,27 @@ async function loadIamData() {
 // --- Member actions ---
 
 async function searchIdentities() {
-  if (!memberSearch.value.trim()) {
+  const q = memberSearch.value.trim()
+  if (!q) {
     identityResults.value = []
     return
   }
   searching.value = true
   try {
-    identityResults.value = await iam.searchIdentities({ labelLike: memberSearch.value.trim() })
+    const [byLabel, byEmail] = await Promise.all([
+      iam.searchIdentities({ labelLike: q }),
+      iam.searchIdentities({ emailLike: q }),
+    ])
+    // Merge and deduplicate by id
+    const seen = new Set<number>()
+    const merged = []
+    for (const identity of [...byLabel, ...byEmail]) {
+      if (!seen.has(identity.id)) {
+        seen.add(identity.id)
+        merged.push(identity)
+      }
+    }
+    identityResults.value = merged
   } finally {
     searching.value = false
   }

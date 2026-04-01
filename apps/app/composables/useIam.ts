@@ -226,7 +226,7 @@ export function useIam() {
   // --- Identities (for member selection) ---
 
   async function searchIdentities(
-    input: { idIn?: number[]; labelLike?: string } = {},
+    input: { idIn?: number[]; labelLike?: string; emailLike?: string } = {},
   ): Promise<{ id: number; label: string; email: string }[]> {
     const data = await gql<{
       iam: { identities: { search: { results: { id: number; label: string; email: string }[] } } }

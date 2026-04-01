@@ -1,0 +1,200 @@
+id: authz.rebac
+version: "1.0.0"
+name: Relationship-Based Access Control (ReBAC)
+description: >
+  Implements ReBAC authorization using organization relationships, roles,
+  and scoped permissions. Permissions are not granted directly to identities —
+  they are bundled into Roles, where each permission is scoped to a
+  RelationshipType. An identity's access to a resource is determined by
+  walking the org-relationship graph from the identity's membership org
+  to the resource's owning org. The system org (id=1, key="system") serves
+  as the root of the org hierarchy; all other orgs are SYS_CHILD of system.
+  The first user to log in is automatically bootstrapped as Owner of the
+  system org.
+
+preconditions:
+  - auth.oidc-keycloak
+  - tenancy.org-based
+  - db.postgres-isolated
+
+provides:
+  - authz.rebac-model
+  - authz.roles
+  - authz.permissions
+  - authz.org-relationships
+  - authz.identity-sync
+  - authz.first-login-bootstrap
+  - authz.owner-limit
+  - authz.iam-ui
+
+parameters:
+  max_owner_orgs:
+    type: number
+    required: false
+    default: 2
+    description: >
+      Maximum number of organizations a single identity can hold the Owner
+      role in. Enforced at membership creation and role assignment time.
+
+  relationship_types:
+    type: string
+    required: false
+    default: "SELF,SYS_CHILD,PARENT,CHILD,PARTNER"
+    description: >
+      Comma-separated list of org relationship types available in the system.
+      SELF and SYS_CHILD are always present. Additional types can be added
+      for custom org hierarchies.
+
+application_instructions: |
+  ## 1. Database Schema
+
+  Create a consolidated migration (V1.0.0__baseline.sql) with these tables:
+
+  - **organization**: id, key (unique), name, keycloak_id (unique), protected (bool), timestamps
+  - **identity**: id, type (USER|SUPER_USER|SERVICE_ACCOUNT), label, email (unique),
+    keycloak_id (unique), organization_id (FK), timestamps
+  - **role**: id, key (unique), name, timestamps
+  - **role_permission**: id, role_id (FK cascade), permission (string), relationship_type (string),
+    unique(role_id, permission, relationship_type)
+  - **membership**: id, identity_id (FK), organization_id (FK), timestamps,
+    unique(identity_id, organization_id)
+  - **membership_role**: membership_id (FK cascade), role_id (FK), PK(membership_id, role_id)
+  - **org_relationship**: id, owner_org_id (FK), related_org_id (FK), relationship_type,
+    unique(owner_org_id, related_org_id, relationship_type), timestamps
+
+  ## 2. Seed Data
+
+  - System org: id=1, key="system", protected=true
+  - SELF relationship for system org
+  - Three default roles: Owner (id=1), Admin (id=2), Member (id=3)
+  - Owner permissions scoped to SELF: ORG_CREATE, ORG_READ, ORG_UPDATE, ORG_DELETE,
+    MEMBERSHIP_CREATE/READ/UPDATE/DELETE, ROLE_ASSIGN, ROLE_MANAGE, IAM_CONFIGURE
+  - Owner permissions scoped to SYS_CHILD: ORG_CREATE/READ/UPDATE/DELETE,
+    MEMBERSHIP_CREATE/READ/UPDATE/DELETE, ROLE_ASSIGN
+  - Admin permissions scoped to SELF: ORG_READ, ORG_UPDATE,
+    MEMBERSHIP_CREATE/READ/UPDATE/DELETE, ROLE_ASSIGN
+  - Member permissions scoped to SELF: ORG_READ, MEMBERSHIP_READ
+
+  ## 3. IAM Service (GraphQL Subgraph)
+
+  ### Identity Sync
+  - `IamIdentitiesOps.sync(input: [IamIdentitySyncInput!]!)`: Upserts identities from Keycloak
+    by matching on email first, then keycloak_id. Returns synced identities.
+  - `IamIdentitiesOps.bootstrap(input: IamIdentitySyncInput!)`: Syncs a single identity AND
+    checks if the system org has any members. If not, creates a membership with Owner role.
+    Returns `{ identity, isFirstUser, systemMembership }`.
+
+  ### Organization Sync with Auto-Relationships
+  - `IamOrganizationsOps.sync(...)`: On upsert, auto-creates:
+    - SELF relationship (org → org)
+    - SYS_CHILD relationship (org → system org) for non-system orgs
+
+  ### Owner Limit Enforcement
+  - `MembershipsService.create()` and `assignRole()` check that an identity does not exceed
+    `max_owner_orgs` Owner-role memberships before allowing the operation.
+
+  ### Search Enhancements
+  - Identity search supports `emailLike` in addition to `labelLike` for flexible member lookup.
+
+  ## 4. Server API Endpoints
+
+  - `POST /api/iam/bootstrap`: Called on login. Extracts keycloakId, email, and display name
+    from the OIDC session, calls the `bootstrap` mutation. First user gets auto-OWNER.
+
+  - `POST /api/orgs/:orgId/members/sync`: Fetches Keycloak org members, syncs them as IAM
+    identities, and auto-creates memberships for any that don't have one yet.
+
+  ## 5. Frontend Integration
+
+  ### Login Flow (useOrg composable)
+  After OIDC login and before syncing orgs, call `POST /api/iam/bootstrap` to ensure the
+  current user exists as an IAM identity and is bootstrapped if first user.
+
+  ### IAM Page (`/iam`)
+  Two sections, controlled by active org context:
+
+  **Section 1 — Members & Roles** (all orgs):
+  - List org memberships with role badges (Owner=amber, Admin=blue, Member=gray)
+  - Add member: search identities by name or email, select roles
+  - Role toggle: gear dropdown to assign/remove roles from a membership
+  - Remove member: delete membership
+
+  **Section 2 — IAM Configuration** (system org only):
+  - Role management: create new roles, expand to see permissions
+  - Permission management: add/remove (permission, relationship_type) pairs on roles
+  - Relationship type reference: documents SELF, SYS_CHILD, PARENT, CHILD, PARTNER
+
+  ### Sidebar Navigation
+  Add IAM link with shield icon between "Best Practices" and "Agent".
+
+  ## 6. Access Check Algorithm (for future enforcement middleware)
+
+  ```
+  hasPermission(identity, permission, targetOrgId):
+    1. Get all Memberships for this Identity
+    2. For each Membership at operatingOrg:
+       a. Get Roles via membership_role
+       b. For each Role, get RolePermissions matching the requested permission
+       c. For each matching (permission, relationshipType):
+          Walk org_relationship from targetOrg looking for operatingOrg
+          via that relationshipType (including transitive chains)
+       d. If found → GRANTED
+    3. If no path found → DENIED
+  ```
+
+test_criteria:
+  - description: System org exists with id=1, key="system", protected=true
+    command: >
+      psql -c "SELECT id, key, protected FROM organization WHERE id = 1"
+      | grep -q "system.*t"
+  - description: Default roles (Owner, Admin, Member) exist with correct permissions
+    command: >
+      psql -c "SELECT r.key, COUNT(rp.id) FROM role r
+      LEFT JOIN role_permission rp ON rp.role_id = r.id
+      GROUP BY r.key ORDER BY r.key"
+  - description: First user bootstrap creates system org Owner membership
+    manual: >
+      Log in with a fresh database. Verify the first user is automatically
+      added as Owner of the system org with full permissions.
+  - description: Owner limit prevents more than 2 Owner memberships
+    manual: >
+      Try to assign Owner role to a user who is already Owner of 2 orgs.
+      Verify the operation is rejected with an appropriate error message.
+  - description: New orgs get SELF and SYS_CHILD relationships automatically
+    manual: >
+      Create a new org via Keycloak. Verify SELF and SYS_CHILD relationships
+      are created in the org_relationship table after sync.
+  - description: IAM page shows config section only for system org
+    manual: >
+      Switch to system org — verify IAM Configuration tab appears.
+      Switch to a non-system org — verify only Members & Roles tab is visible.
+
+security_notes: |
+  - **Owner role is privileged**: Owner of the system org has IAM_CONFIGURE and
+    ROLE_MANAGE permissions, allowing them to define what other roles can do.
+    Limit who gets Owner carefully.
+  - **Owner limit enforcement**: The max_owner_orgs limit prevents a single identity
+    from accumulating excessive privilege across orgs. This is enforced at the
+    service layer, not just the UI.
+  - **System org is protected**: Cannot be modified via sync or standard mutations.
+    Only the database seed creates it.
+  - **Identity sync is idempotent**: The sync operation uses upsert semantics —
+    calling it multiple times with the same data produces the same result.
+  - **Keycloak is source of truth for identity**: IAM identities are projections
+    of Keycloak users. The keycloak_id column ensures 1:1 mapping.
+  - **Bootstrap is one-time**: The first-user bootstrap only triggers when the
+    system org has zero members. Subsequent logins skip the bootstrap path.
+
+touchpoints:
+  - services/iam/data/migrations/V1.0.0__baseline.sql
+  - services/iam/src/identities/identities.svc.ts
+  - services/iam/src/organizations/organizations.svc.ts
+  - services/iam/src/memberships/memberships.svc.ts
+  - services/iam/src/schema.ts
+  - services/iam/src/resolvers.ts
+  - apps/app/server/api/iam/bootstrap.post.ts
+  - apps/app/server/api/orgs/[orgId]/members/sync.post.ts
+  - apps/app/composables/useOrg.ts
+  - apps/app/composables/useIam.ts
+  - apps/app/pages/iam.vue
+  - apps/app/layouts/default.vue

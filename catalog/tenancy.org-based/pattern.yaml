@@ -1,5 +1,5 @@
 id: tenancy.org-based
-version: "0.1.0"
+version: "0.2.0"
 name: Multi-Tenancy via Keycloak Organizations
 description: >
   Implements multi-tenancy using Keycloak Organizations as the source of
@@ -25,10 +25,11 @@ provides:
 parameters:
   project_name:
     type: string
-    required: true
+    required: false
     description: >
-      The project identifier used as the key for the operator's own
-      organization (id=2). Also used in seed data naming.
+      The project identifier. Previously used as the key for a hardcoded
+      operator org (id=2) in seed data, but the V1.0.0 baseline no longer
+      seeds a project org. Retained for reference in naming conventions.
   system_org_id:
     type: number
     required: false
@@ -44,61 +45,59 @@ parameters:
       The fixed key for the System organization.
 
 application_instructions: |
-  ## 1. Organization database table
+  ## 1. Database schema (V1.0.0 baseline)
 
-  Create the migration `V0.0.1__create_organization.sql` in the IAM
-  service's migrations directory (`services/iam/data/migrations/`):
+  All IAM tables are created in a single consolidated migration
+  `V1.0.0__baseline.sql` in `services/iam/data/migrations/`. This replaces
+  the previous incremental migrations (V0.0.1 through V0.0.11).
+
+  The baseline creates the `organization` table with all columns:
 
   ```sql
   CREATE TABLE organization (
-      id         SERIAL       PRIMARY KEY,
-      key        VARCHAR(100) NOT NULL UNIQUE,
-      name       VARCHAR(255) NOT NULL,
-      created_at TIMESTAMPTZ  NOT NULL DEFAULT now(),
-      updated_at TIMESTAMPTZ  NOT NULL DEFAULT now()
+      id          SERIAL       PRIMARY KEY,
+      key         VARCHAR(100) NOT NULL UNIQUE,
+      name        VARCHAR(255) NOT NULL,
+      keycloak_id VARCHAR(255) UNIQUE,
+      protected   BOOLEAN      NOT NULL DEFAULT false,
+      created_at  TIMESTAMPTZ  NOT NULL DEFAULT now(),
+      updated_at  TIMESTAMPTZ  NOT NULL DEFAULT now()
   );
-  ```
-
-  ## 2. Add Keycloak ID column
-
-  Create `V0.0.4__add_organization_keycloak_id.sql`:
-
-  ```sql
-  ALTER TABLE organization ADD COLUMN keycloak_id VARCHAR(255) UNIQUE;
-
-  -- Backfill existing rows — real Keycloak IDs will be synced at runtime
-  UPDATE organization SET keycloak_id = 'kc-placeholder-' || id
-    WHERE keycloak_id IS NULL;
   ```
 
   The `keycloak_id` column stores the Keycloak Organization UUID, enabling
   bidirectional sync between Keycloak and the application database.
 
-  ## 3. Add protected flag
-
-  Create `V0.0.5__add_organization_protected.sql`:
-
-  ```sql
-  ALTER TABLE organization ADD COLUMN protected BOOLEAN NOT NULL DEFAULT false;
-  ```
-
   Protected organizations (specifically the System org) are skipped by sync
   operations and cannot be modified via normal API mutations.
 
-  ## 4. Seed data
+  The baseline also creates the full ReBAC schema: `role`,
+  `role_permission`, `membership`, `membership_role`, and
+  `org_relationship` tables.
 
-  Create `V0.0.3__seed.sql` with bootstrap organizations and identities:
+  ## 2. Seed data
+
+  The V1.0.0 baseline seeds only the System organization, default roles,
+  and permissions. There is no hardcoded project org or sample users.
 
   ```sql
   INSERT INTO organization (id, key, name, protected) VALUES
-      (1, 'system',         'System',              true),
-      (2, '<project_name>', '<Project Name> Inc.', false);
+      (1, 'system', 'System', true);
 
-  SELECT setval('organization_id_seq', (SELECT max(id) FROM organization));
+  INSERT INTO org_relationship (owner_org_id, related_org_id, relationship_type) VALUES
+      (1, 1, 'SELF');
+
+  INSERT INTO role (id, key, name) VALUES
+      (1, 'owner',  'Owner'),
+      (2, 'admin',  'Admin'),
+      (3, 'member', 'Member');
   ```
 
-  The System org (id=1) is always protected. The project org (id=2) is the
-  operator's own organization.
+  Owner, Admin, and Member roles are seeded with SELF-scoped permissions.
+  The Owner role also has SYS_CHILD-scoped permissions, enabling system
+  owners to manage child organizations. Additional organizations are
+  created at runtime via Keycloak sync or API operations. The first user
+  to log in is auto-bootstrapped as Owner of the System org.
 
   ## 5. Organization service
 
@@ -292,10 +291,7 @@ security_notes: |
     systems.
 
 touchpoints:
-  - services/iam/data/migrations/V0.0.1__create_organization.sql
-  - services/iam/data/migrations/V0.0.3__seed.sql
-  - services/iam/data/migrations/V0.0.4__add_organization_keycloak_id.sql
-  - services/iam/data/migrations/V0.0.5__add_organization_protected.sql
+  - services/iam/data/migrations/V1.0.0__baseline.sql
   - services/iam/src/organizations/organizations.svc.ts
   - services/iam/src/schema.ts
   - services/iam/src/resolvers.ts
